@@ -104,8 +104,8 @@ impl FlatMftEntryWithName {
 
         FlatMftEntryWithName {
             entry_id: entry.header.record_number,
-            signature: String::from_utf8(entry.header.signature.to_ascii_uppercase())
-                .expect("It should be either FILE or BAAD (valid utf-8)"),
+            signature: String::from_utf8_lossy(&entry.header.signature.to_ascii_uppercase())
+                .into_owned(),
             sequence: entry.header.sequence,
             hard_link_count: entry.header.hard_link_count,
             flags: entry.header.flags.clone(),
@@ -127,7 +127,8 @@ impl FlatMftEntryWithName {
             file_size,
             full_path: parser
                 .get_full_path_for_entry(entry)
-                .expect("I/O Err")
+                .ok()
+                .flatten()
                 .unwrap_or_default(),
         }
     }
