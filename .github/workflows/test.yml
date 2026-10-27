@@ -21,12 +21,14 @@ jobs:
           - windows-latest
     env:
       CARGO_TERM_COLOR: always
-      NTFS_TESTDATA_REQUIRED: 1
+    # The NTFS / EWF / AFF disk images under testdata/ are upstream's Git LFS objects and are not
+    # stored in this fork (they would use Yamato Security's LFS quota on every run); the tests of
+    # the ntfs, ewf and aff crates skip themselves without them. The mft crate's own tests use
+    # samples/, which is in the repository.
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-          lfs: true
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -38,6 +40,11 @@ jobs:
 
       - name: Run clippy
         run: cargo clippy --all-targets --all-features -- -D warnings
+
+      # The commands above build only the root `mft` crate; the other workspace crates stopped
+      # compiling upstream without CI noticing. Compile them too (not the GTK explorer GUI).
+      - name: Check the workspace crates
+        run: cargo check --workspace --exclude ntfs-explorer-gui --all-targets
 
       - name: Run tests
         run: cargo test --all-targets --all-features

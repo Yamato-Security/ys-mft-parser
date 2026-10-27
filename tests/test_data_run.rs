@@ -18,6 +18,8 @@ fn test_runs() {
     );
 
     // this panics in the original github code
+    // The third run's offset is relative to the last run with an LCN (0x20), not to the sparse
+    // run: 0x20 + 0x30 (as ntfs-3g's ntfs_mapping_pairs_decompress keeps a running LCN).
     assert_eq!(
         decode_data_runs(&[0x11, 0x30, 0x20, 0x01, 0x60, 0x11, 0x10, 0x30, 0x00]),
         Some(vec![
@@ -33,7 +35,7 @@ fn test_runs() {
             },
             DataRun {
                 lcn_length: 0x10,
-                lcn_offset: 0x30,
+                lcn_offset: 0x50,
                 run_type: RunType::Standard
             },
         ])

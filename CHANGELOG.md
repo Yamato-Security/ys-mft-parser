@@ -4,6 +4,46 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] - 2026-10-27 (ys-mft-parser)
+
+First version of Yamato Security's fork, based on upstream `master` 18b6c05 (after 0.7.0).
+
+### Changed
+- `MftParser::get_full_path_for_entry` returns `Option<String>` and `FlatMftEntryWithName::full_path`
+  is a `String`: paths are joined with `/` on every OS (upstream #120, Mason Bartle).
+- `mft_dump --extract-resident-streams` names files `<path>__<entry>-<sequence>_<n>_<stream>.dontrun`
+  (no random part), sanitizes the stream name and the characters Windows does not allow, shortens
+  only the file name, and does not overwrite an existing file.
+- The entry size comes from the first valid FILE header (upstream #119, Joel Uckelman), accepted
+  only as a power of two from 512 bytes to 64 KiB within the first 4 MiB.
+- `log`'s `release_max_level_debug` is a `mft_dump` feature only (upstream #149, Lej77).
+- The `rand` dependency is gone; the crate is not published (`publish = false`).
+
+### Fixed
+- Two directories naming each other as parent (or a chain deeper than 256) overflowed the stack;
+  such paths now start with `[Unknown]` (instead of upstream #117's API change).
+- An all-zero first header divided by zero in `get_entry_count`.
+- A parent directory whose record was reused gave its children the new owner's path; they are
+  `[Orphaned]` (upstream #150, mcardonaes). A deleted directory, whose sequence number NTFS raised
+  when freeing it, is still the parent of its deleted files.
+- Data runs after a sparse run were placed relative to the sparse run (LCN 0), so the clusters of
+  sparse and compressed files after the first gap were wrong.
+- A data run without a length, an LCN out of range, and an entry number whose offset overflows
+  panicked (debug builds) or wrapped; they are errors.
+- `FlatMftEntryWithName::from_entry` used `expect()` for the signature and the path.
+- The `ntfs` crate (with `ntfs-info`) and `ntfs-explorer-gui` did not compile since upstream's
+  borrowed UTF-16 refactor (#147); CI now also checks the workspace crates (except the GUI).
+- The `ntfs` crate's `fuse` feature did not compile (a derived `Debug` over `dyn ReadAt`).
+
+### Tests
+- Damaged-input tests: seeded random damage and every byte of real entries at 0x00 / 0xFF.
+- `test_runs` expected a run after a sparse run at the bare offset; it is relative to the last LCN.
+
+### CI
+- The NTFS / EWF / AFF disk images are upstream's Git LFS objects and are not stored in this fork;
+  CI no longer requires them (the tests of those crates skip without them).
+- `actions/checkout` is pinned to a commit.
+
 ## [Unreleased]
 
 ### Added
