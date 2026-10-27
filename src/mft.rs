@@ -46,6 +46,12 @@ impl MftParser<Cursor<Vec<u8>>> {
     }
 }
 
+/// The largest MFT entry size accepted (NTFS uses 1024 or 4096 bytes). A bigger size in a damaged
+/// or crafted header would make every entry read allocate that much.
+const MAX_ENTRY_SIZE: u32 = 64 * 1024;
+/// How many entry positions are tried to find a usable header (the first 4 MiB at 1 KiB steps).
+const MAX_ENTRY_SIZE_PROBES: usize = 4096;
+
 fn check_entry_size<T: Read + Seek>(data: &mut T, off: u64) -> Result<u32> {
     data.seek(SeekFrom::Start(off))?;
     if let Ok(header) = EntryHeader::from_reader(data, 0) {
@@ -56,13 +62,16 @@ fn check_entry_size<T: Read + Seek>(data: &mut T, off: u64) -> Result<u32> {
         // the entry size and USA size follow this rule when selected
         // randomly is vanishingly small (1/2^32), so this check should be
         // sufficient to ensure that we have a good entry size.
-        if header.total_entry_size != 0 &&
-           header.total_entry_size == (header.usa_size - 1) as u32 * 512
+        let size = header.total_entry_size;
+        let usa_sectors = header.usa_size.checked_sub(1).map(u32::from);
+        if size.is_power_of_two()
+            && (512..=MAX_ENTRY_SIZE).contains(&size)
+            && usa_sectors.is_some_and(|n| n * 512 == size)
         {
-            return Ok(header.total_entry_size);
+            return Ok(size);
         }
     }
-    Err(Error::FailedToReadEntrySize{})
+    Err(Error::FailedToReadEntrySize {})
 }
 
 /// Search for a valid MFT FILE record to determine the FILE record size.
@@ -75,11 +84,13 @@ fn find_entry_size<T: Read + Seek>(data: &mut T, size: u64) -> Result<u32> {
     //
     // Corrupt MFTs may have the first entries wiped/overwritten, and using
     // this method of determining the FILE record size may allow for recovery
-    // of entries in such cases.
+    // of entries in such cases. The search is bounded so that a large file
+    // that is not an MFT is not read to its end.
     (0..size)
         .step_by(1024)
+        .take(MAX_ENTRY_SIZE_PROBES)
         .find_map(|off| check_entry_size(data, off).ok())
-        .ok_or(Error::FailedToReadEntrySize{})
+        .ok_or(Error::FailedToReadEntrySize {})
 }
 
 impl<T: Read + Seek> MftParser<T> {
@@ -272,5 +283,30 @@ mod tests {
         let size = data.seek(SeekFrom::End(0)).unwrap();
         data.seek(SeekFrom::Start(0)).unwrap();
         assert_eq!(find_entry_size(&mut data, size).unwrap(), 1024);
+    }
+
+    #[test]
+    fn test_find_entry_size_rejects_unusable_headers() {
+        let mut data = std::fs::read(mft_sample()).unwrap();
+        data.truncate(4 * 1024);
+        // entry 0: no update sequence array (usa_size 0 must not underflow)
+        data[6..8].copy_from_slice(&0u16.to_le_bytes());
+        // entry 1: a consistent but huge size (1 MiB, 2049 USA elements)
+        data[1024 + 6..1024 + 8].copy_from_slice(&2049u16.to_le_bytes());
+        data[1024 + 0x1C..1024 + 0x20].copy_from_slice(&(1024u32 * 1024).to_le_bytes());
+        // entry 2: zeroed
+        data[2048..3072].fill(0);
+        // entry 3 is intact
+        let size = data.len() as u64;
+        let mut cursor = std::io::Cursor::new(data.clone());
+        assert_eq!(find_entry_size(&mut cursor, size).unwrap(), 1024);
+        data[3072..].fill(0);
+        let mut cursor = std::io::Cursor::new(data.clone());
+        assert!(find_entry_size(&mut cursor, size).is_err());
+        assert!(MftParser::from_buffer(data).is_err());
+        assert!(
+            MftParser::from_buffer(vec![0; 4096]).is_err(),
+            "no division by zero"
+        );
     }
 }
