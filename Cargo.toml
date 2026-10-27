@@ -1,12 +1,14 @@
 [package]
 name = "mft"
 description = "A Fast (and safe) parser for the Windows Master File Table (MFT) format"
-homepage = "https://github.com/omerbenamram/mft"
-repository = "https://github.com/omerbenamram/mft"
+homepage = "https://github.com/Yamato-Security/ys-mft-parser"
+repository = "https://github.com/Yamato-Security/ys-mft-parser"
 license = "MIT/Apache-2.0"
 readme = "README.md"
 
-version = "0.7.0"
+version = "0.8.0"
+# Yamato Security fork of the upstream `mft` crate: not published under the upstream name.
+publish = false
 authors = ["Omer Ben-Amram <omerbenamram@gmail.com>"]
 edition = "2024"
 rust-version = "1.90"

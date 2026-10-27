@@ -1,3 +1,37 @@
+# ys-mft-parser
+
+Yamato Security's maintained fork of Omer Ben-Amram's [mft](https://github.com/omerbenamram/mft)
+crate, the Windows Master File Table parser used by
+[Juntei](https://github.com/Yamato-Security/juntei). The complete upstream history and the
+MIT / Apache-2.0 license are retained; everything below this section is upstream's README.
+
+The fork applies upstream pull requests that were waiting for review and fixes found while building
+Juntei, so that damaged or crafted `$MFT` files are parsed instead of crashing the process:
+
+| Change | Source |
+| --- | --- |
+| A parent-reference loop (or a chain of thousands of directories) no longer overflows the stack | fork (replaces upstream #117) |
+| An all-zero or garbage first header no longer divides by zero or sizes every read from it; the entry size comes from the first valid header (wiped first entries are recovered) | upstream #119 (Joel Uckelman) + bounds |
+| Full paths use `/` on every OS (`get_full_path_for_entry` returns a `String`) | upstream #120 (Mason Bartle) |
+| A file whose parent directory's record was reused is `[Orphaned]` instead of getting the new owner's path | upstream #150 (mcardonaes) |
+| A deleted file in a deleted directory keeps its path (the parent's sequence number is one ahead) | fork |
+| Data runs after a sparse run point at the right clusters (sparse and compressed files) | fork |
+| Malformed data runs, huge entry numbers and `FlatMftEntryWithName` no longer panic | fork |
+| The `ntfs` crate and the explorer GUI compile again (broken upstream since the UTF-16 refactor) | fork |
+| `mft_dump -e` names resident stream files deterministically and sanitizes the stream name (an alternate data stream named `../../x` was written outside the output directory) | fork |
+| The `log` crate's `release_max_level_debug` is enabled only for `mft_dump` | upstream #149 (Lej77) |
+
+Use it from Cargo by commit:
+
+```toml
+mft = { git = "https://github.com/Yamato-Security/ys-mft-parser", rev = "<commit>", default-features = false }
+```
+
+The crate keeps the name `mft` and is not published to crates.io; its versions start at 0.8.0 and
+are the fork's own. See [CHANGELOG.md](CHANGELOG.md).
+
+---
+
 [![Build Status](https://dev.azure.com/benamram/DFIR/_apis/build/status/omerbenamram.mft?branchName=master)](https://dev.azure.com/benamram/DFIR/_build/latest?definitionId=5&branchName=master)
 ![crates.io](https://img.shields.io/crates/v/mft.svg)
 
