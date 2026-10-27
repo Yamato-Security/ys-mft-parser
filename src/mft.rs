@@ -55,6 +55,10 @@ fn join_path(parent: &str, name: &str) -> String {
     }
 }
 
+/// Parent references followed at most for one path. Real paths are far shallower; the limit keeps a
+/// crafted chain of nested directories from exhausting the stack.
+const MAX_PATH_DEPTH: usize = 256;
+
 /// The largest MFT entry size accepted (NTFS uses 1024 or 4096 bytes). A bigger size in a damaged
 /// or crafted header would make every entry read allocate that much.
 const MAX_ENTRY_SIZE: u32 = 64 * 1024;
@@ -154,57 +158,74 @@ impl<T: Read + Seek> MftParser<T> {
         (0..total_entries).map(move |i| self.get_entry(i))
     }
 
+    #[cfg(test)]
     fn inner_get_entry(
         &mut self,
         parent_reference: (u64, u16),
         entry_name: Option<&str>,
     ) -> String {
-        let cached_entry = self.entries_cache.get(&parent_reference);
+        self.resolve_parent(parent_reference, entry_name, &mut Vec::new())
+    }
 
+    /// The path of the parent a reference points to, joined with `entry_name`. `chain` holds the
+    /// entries being resolved, so that a parent chain that loops back on itself (or never ends) in
+    /// a damaged or crafted MFT ends in `[Unknown]` instead of recursing until the stack overflows.
+    fn resolve_parent(
+        &mut self,
+        parent_reference: (u64, u16),
+        entry_name: Option<&str>,
+        chain: &mut Vec<u64>,
+    ) -> String {
         // If my parent path is known, then my path is parent's full path + my name.
         // Else, retrieve and cache my parent's path.
-        if let Some(cached_parent_path) = cached_entry {
-            match entry_name {
-                Some(name) => join_path(cached_parent_path, name),
-                None => cached_parent_path.clone(),
-            }
+        let path = if let Some(cached_parent_path) = self.entries_cache.get(&parent_reference) {
+            cached_parent_path.clone()
         } else {
             let (parent_entry_id, parent_sequence) = parent_reference;
-            let path = match self.get_entry(parent_entry_id).ok() {
-                Some(parent) => {
-                    if parent.header.sequence != parent_sequence {
+            if chain.contains(&parent_entry_id) || chain.len() >= MAX_PATH_DEPTH {
+                trace!(
+                    "Found a parent reference loop or too deep a path at entry ID {parent_entry_id}"
+                );
+                String::from("[Unknown]")
+            } else {
+                chain.push(parent_entry_id);
+                let path = match self.get_entry(parent_entry_id).ok() {
+                    Some(parent) if !is_referenced_version(&parent, parent_sequence) => {
                         trace!(
                             "Found stale MFT reference: entry ID {parent_entry_id}, \
                              expected sequence {parent_sequence}, actual sequence {}",
                             parent.header.sequence
                         );
                         String::from("[Orphaned]")
-                    } else {
-                        match self.get_full_path_for_entry(&parent) {
-                            Ok(Some(path)) if parent.is_dir() => path,
-                            Ok(Some(_)) => String::from("[Unknown]"),
-                            // I have a parent, which doesn't have a filename attribute.
-                            // Default to root.
-                            _ => String::new(),
-                        }
                     }
-                }
-                // Parent is maybe corrupted or incomplete, use a sentinel instead.
-                None => String::from("[Unknown]"),
-            };
-
-            let full_path = match entry_name {
-                Some(name) => join_path(&path, name),
-                None => path.clone(),
-            };
-            self.entries_cache.put(parent_reference, path);
-            full_path
+                    Some(parent) => match self.path_of(&parent, chain) {
+                        Some(path) if parent.is_dir() => path,
+                        Some(_) => String::from("[Unknown]"),
+                        // I have a parent, which doesn't have a filename attribute.
+                        // Default to root.
+                        None => String::new(),
+                    },
+                    // Parent is maybe corrupted or incomplete, use a sentinel instead.
+                    None => String::from("[Unknown]"),
+                };
+                chain.pop();
+                self.entries_cache.put(parent_reference, path.clone());
+                path
+            }
+        };
+        match entry_name {
+            Some(name) => join_path(&path, name),
+            None => path,
         }
     }
 
     /// Gets the full path for an entry, with `/` separators on every OS.
     /// Caches computations.
     pub fn get_full_path_for_entry(&mut self, entry: &MftEntry) -> Result<Option<String>> {
+        Ok(self.path_of(entry, &mut Vec::new()))
+    }
+
+    fn path_of(&mut self, entry: &MftEntry, chain: &mut Vec<u64>) -> Option<String> {
         let entry_id = entry.header.record_number;
         match entry.find_best_name_attribute() {
             Some(filename_header) => {
@@ -217,16 +238,16 @@ impl<T: Read + Seek> MftParser<T> {
 
                 // MFT entry 5 is the root path.
                 if parent_entry_id == 5 {
-                    return Ok(Some(name));
+                    return Some(name);
                 }
 
                 if parent_entry_id == entry_id {
                     trace!("Found self-referential file path, for entry ID {entry_id}");
-                    return Ok(Some(join_path("[Orphaned]", &name)));
+                    return Some(join_path("[Orphaned]", &name));
                 }
 
                 if parent_entry_id > 0 {
-                    Ok(Some(self.inner_get_entry(parent_reference, Some(&name))))
+                    Some(self.resolve_parent(parent_reference, Some(&name), chain))
                 } else {
                     trace!("Found orphaned entry ID {entry_id}");
 
@@ -237,7 +258,7 @@ impl<T: Read + Seek> MftParser<T> {
                         orphan.clone(),
                     );
 
-                    Ok(Some(orphan))
+                    Some(orphan)
                 }
             }
             None => match (
@@ -245,11 +266,21 @@ impl<T: Read + Seek> MftParser<T> {
                 entry.header.base_reference.sequence,
             ) {
                 // I don't have a parent reference, and no X30 attribute. Though luck.
-                (0, _) => Ok(None),
-                parent_reference => Ok(Some(self.inner_get_entry(parent_reference, None))),
+                (0, _) => None,
+                parent_reference => Some(self.resolve_parent(parent_reference, None, chain)),
             },
         }
     }
+}
+
+/// Whether `entry` is the version of itself that a reference with `sequence` points to. NTFS
+/// increments an entry's sequence number when the entry is freed, so the deleted parent directory
+/// of a deleted file is one ahead of the file's reference; a sequence of 0 names no version.
+fn is_referenced_version(entry: &MftEntry, sequence: u16) -> bool {
+    let actual = entry.header.sequence;
+    sequence == 0
+        || actual == sequence
+        || (!entry.is_allocated() && actual == sequence.wrapping_add(1))
 }
 
 #[cfg(test)]
@@ -260,7 +291,7 @@ mod tests {
     use std::fs::File;
     use std::io::{BufReader, Seek, SeekFrom};
 
-    use super::find_entry_size;
+    use super::{MAX_PATH_DEPTH, find_entry_size};
 
     // entrypoint for clion profiler.
     #[test]
@@ -329,6 +360,100 @@ mod tests {
         let path = parser.inner_get_entry((5, stale_sequence), Some("test.txt"));
 
         assert_eq!(path, "[Orphaned]/test.txt");
+    }
+
+    /// Point every $FILE_NAME of `entry` at `parent` (with the parent's current sequence number).
+    fn set_parent(data: &mut [u8], entry: usize, parent: u64) {
+        let size = 1024;
+        let base = entry * size;
+        let parent_sequence = {
+            let p = parent as usize * size;
+            u16::from_le_bytes([data[p + 0x10], data[p + 0x11]])
+        };
+        let mut off = usize::from(u16::from_le_bytes([data[base + 0x14], data[base + 0x15]]));
+        while off + 8 < size {
+            let t = u32::from_le_bytes(data[base + off..base + off + 4].try_into().unwrap());
+            let len = u32::from_le_bytes(data[base + off + 4..base + off + 8].try_into().unwrap());
+            if t == 0xFFFF_FFFF || len == 0 {
+                break;
+            }
+            if t == 0x30 && data[base + off + 8] == 0 {
+                let content = usize::from(u16::from_le_bytes([
+                    data[base + off + 0x14],
+                    data[base + off + 0x15],
+                ]));
+                let at = base + off + content;
+                assert!(at % 512 + 8 <= 510, "must not touch a fixup position");
+                data[at..at + 6].copy_from_slice(&parent.to_le_bytes()[..6]);
+                data[at + 6..at + 8].copy_from_slice(&parent_sequence.to_le_bytes());
+            }
+            off += len as usize;
+        }
+    }
+
+    /// Entries from 16 on that are directories with a $FILE_NAME.
+    fn directories(data: &[u8]) -> Vec<usize> {
+        (16..data.len() / 1024)
+            .filter(|&i| {
+                let base = i * 1024;
+                &data[base..base + 4] == b"FILE" && data[base + 0x16] & 2 != 0
+            })
+            .collect()
+    }
+
+    #[test]
+    fn test_deleted_parent_directory_keeps_its_path() {
+        // Entry 12590 (deleted) references parent 12589 with sequence 1; the parent directory was
+        // deleted too, which raised its sequence number to 2. It is still the same directory.
+        let mut parser = MftParser::from_path(mft_sample()).unwrap();
+        let parent = parser.get_entry(12589).unwrap();
+        assert!(!parent.is_allocated());
+        assert_eq!(parent.header.sequence, 2);
+        let entry = parser.get_entry(12590).unwrap();
+        assert_eq!(
+            parser.get_full_path_for_entry(&entry).unwrap().unwrap(),
+            "Documents and Settings/Donald Blake/Local Settings/History/History.IE5/MSHist012009011420090115/index.dat"
+        );
+        // a reference with sequence 0 names no version of the parent
+        let root_path = parser.inner_get_entry((5, 5), Some("x"));
+        assert_eq!(parser.inner_get_entry((5, 0), Some("x")), root_path);
+    }
+
+    #[test]
+    fn test_parent_reference_loop_does_not_overflow_the_stack() {
+        let mut data = std::fs::read(mft_sample()).unwrap();
+        data.truncate(1024 * 1024);
+        let dirs = directories(&data);
+        let (a, b) = (dirs[0], dirs[1]);
+        set_parent(&mut data, a, b as u64);
+        set_parent(&mut data, b, a as u64);
+        let mut parser = MftParser::from_buffer(data).unwrap();
+        let entry = parser.get_entry(a as u64).unwrap();
+        let path = parser.get_full_path_for_entry(&entry).unwrap().unwrap();
+        assert!(path.starts_with("[Unknown]/"), "{path}");
+        let paths = (0..parser.get_entry_count())
+            .filter_map(|i| parser.get_entry(i).ok())
+            .collect::<Vec<_>>();
+        for e in &paths {
+            parser.get_full_path_for_entry(e).unwrap();
+        }
+    }
+
+    #[test]
+    fn test_very_deep_parent_chains_stop_at_the_depth_limit() {
+        let mut data = std::fs::read(mft_sample()).unwrap();
+        let dirs = directories(&data);
+        let chain = &dirs[..600];
+        assert!(chain.len() > MAX_PATH_DEPTH);
+        for pair in chain.windows(2) {
+            set_parent(&mut data, pair[1], pair[0] as u64);
+        }
+        let mut parser = MftParser::from_buffer(data).unwrap();
+        let deepest = parser.get_entry(*chain.last().unwrap() as u64).unwrap();
+        let path = parser.get_full_path_for_entry(&deepest).unwrap().unwrap();
+        assert!(path.starts_with("[Unknown]/"), "{}", &path[..40]);
+        // [Unknown], the MAX_PATH_DEPTH resolved directories, then the entry's own name
+        assert_eq!(path.matches('/').count(), MAX_PATH_DEPTH + 1);
     }
 
     #[test]
