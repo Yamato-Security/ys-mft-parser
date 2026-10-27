@@ -1,0 +1,74 @@
+[package]
+name = "mft"
+description = "A Fast (and safe) parser for the Windows Master File Table (MFT) format"
+homepage = "https://github.com/omerbenamram/mft"
+repository = "https://github.com/omerbenamram/mft"
+license = "MIT/Apache-2.0"
+readme = "README.md"
+
+version = "0.7.0"
+authors = ["Omer Ben-Amram <omerbenamram@gmail.com>"]
+edition = "2024"
+rust-version = "1.90"
+
+[workspace]
+members = [
+    ".",
+    "crates/forensic-image",
+    "crates/aff",
+    "crates/ewf",
+    "crates/ntfs",
+    "crates/ntfs-explorer-gui",
+    "crates/dfxml",
+]
+
+[dependencies]
+log = { version = "0.4", features = ["release_max_level_debug"] }
+byteorder = "1"
+bitflags = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+csv = "1"
+thiserror = "2"
+num-traits = "0.2"
+num-derive = "0.4"
+winstructs = "0.3.2"
+lru = "0.16.1"
+itertools = "0.14"
+rand = "0.9"
+jiff = { version = "0.2.16", default-features = false, features = ["std", "alloc", "serde", "perf-inline"] }
+
+# `mft_dump` dependencies
+clap = { version = "4", optional = true }
+anyhow = { version = "1.0", optional = true }
+simplelog = { version = "0.12", optional = true }
+dialoguer = { version = "0.12", optional = true }
+indoc = { version = "2.0", optional = true }
+sonic-rs = { version = "0.5.6", optional = true }
+utf16-simd = "0.1.0"
+
+[features]
+default = ["mft_dump"]
+mft_dump = ["anyhow", "simplelog", "dialoguer", "indoc", "clap", "sonic-rs"]
+
+[dev-dependencies]
+criterion = "0.7"
+doc-comment = "0.3"
+assert_cmd = "2.1.1"
+predicates = "3.1"
+env_logger = "0.11"
+tempfile = "3.23"
+
+# rexpect relies on unix process semantics, but it's only used for process interaction tests.
+[target.'cfg(not(target_os = "windows"))'.dev-dependencies]
+rexpect = "0.6"
+
+
+[[bin]]
+name = "mft_dump"
+required-features = ["mft_dump"]
+
+[[bench]]
+name = "benchmark"
+path = "./src/benches/benchmark.rs"
+harness = false

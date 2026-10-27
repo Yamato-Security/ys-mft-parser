@@ -1,0 +1,110 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+
+jobs:
+  build-release:
+    name: Build release binaries
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+          - runner: ubuntu-22.04
+            target: aarch64-unknown-linux-gnu
+          - runner: ubuntu-22.04
+            target: x86_64-unknown-linux-musl
+          - runner: macos-15-intel
+            target: x86_64-apple-darwin
+          - runner: macos-15
+            target: aarch64-apple-darwin
+          - runner: windows-2022
+            target: x86_64-pc-windows-msvc
+    env:
+      CARGO_TERM_COLOR: always
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install musl tooling
+        if: matrix.target == 'x86_64-unknown-linux-musl'
+        run: sudo apt-get update && sudo apt-get install --no-install-recommends musl-tools
+
+      - name: Install cross toolchain (zig)
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        uses: goto-bus-stop/setup-zig@v2
+        with:
+          version: 0.11.0
+
+      - name: Build release binary (aarch64-linux)
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          cargo install cargo-zigbuild
+          cargo zigbuild --release --target ${{ matrix.target }}
+
+      - name: Build release binary
+        if: matrix.target != 'aarch64-unknown-linux-gnu'
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Prepare artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          release_dir="target/${{ matrix.target }}/release"
+          version="${GITHUB_REF_NAME}"
+          mkdir -p dist
+          if [[ "${{ runner.os }}" == "Windows" ]]; then
+            src="${release_dir}/mft_dump.exe"
+            dest="dist/mft_dump-${version}-${{ matrix.target }}.exe"
+          else
+            src="${release_dir}/mft_dump"
+            dest="dist/mft_dump-${version}-${{ matrix.target }}"
+          fi
+          cp "${src}" "${dest}"
+          if [[ "${{ runner.os }}" != "Windows" ]]; then
+            chmod +x "${dest}"
+          fi
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mft_dump-${{ matrix.target }}
+          path: dist/*
+          if-no-files-found: error
+
+  publish-release:
+    name: Publish GitHub release
+    needs: build-release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+          path: dist
+
+      - name: Show downloaded artifacts
+        run: ls -R dist
+
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v1
+        with:
+          files: dist/**
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
