@@ -134,7 +134,11 @@ impl<T: Read + Seek> MftParser<T> {
         debug!("Reading entry {entry_number}");
 
         let entry_size = u64::from(self.entry_size);
-        let desired_offset = entry_number * entry_size;
+        let desired_offset = entry_number
+            .checked_mul(entry_size)
+            .ok_or_else(|| Error::Any {
+                detail: format!("entry number {entry_number} is beyond the MFT"),
+            })?;
 
         // Avoid seeking when reading sequential entries; this keeps the BufReader hot and
         // removes a large number of __lseek syscalls in tight loops.
@@ -454,6 +458,14 @@ mod tests {
         assert!(path.starts_with("[Unknown]/"), "{}", &path[..40]);
         // [Unknown], the MAX_PATH_DEPTH resolved directories, then the entry's own name
         assert_eq!(path.matches('/').count(), MAX_PATH_DEPTH + 1);
+    }
+
+    #[test]
+    fn test_huge_entry_numbers_are_errors() {
+        let mut parser = MftParser::from_path(mft_sample()).unwrap();
+        assert!(parser.get_entry(u64::MAX).is_err());
+        assert!(parser.get_entry(parser.get_entry_count()).is_err());
+        assert!(parser.get_entry(0).is_ok());
     }
 
     #[test]
