@@ -10,7 +10,6 @@ pub fn mft_sample_name(filename: &str) -> PathBuf {
         .unwrap()
         .join("samples")
         .join(filename)
-
 }
 
 pub fn mft_sample() -> PathBuf {
