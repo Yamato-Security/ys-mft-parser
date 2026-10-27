@@ -14,7 +14,7 @@ use anyhow::anyhow;
 use anyhow::{Context, Error, Result};
 use sonic_rs as sonic_json;
 use std::backtrace::Backtrace;
-use std::fmt::{self, Write as FmtWrite};
+use std::fmt;
 use std::fs::File;
 use std::io::{BufWriter, Read, Seek, Write};
 use std::path::{Path, PathBuf};
@@ -277,23 +277,24 @@ impl MftDump {
                     })
                     .enumerate()
                 {
-                    let orig_path_component: String = data_streams_dir
-                        .join(&sanitized_path)
-                        .to_string_lossy()
-                        .to_string();
+                    // The entry number and sequence keep the names unique and the same on every
+                    // run; only the file name is shortened, never the output directory.
+                    let truncated: String = sanitized_path.chars().take(150).collect();
+                    let file_name = format!(
+                        "{truncated}__{}-{}_{i}_{}.dontrun",
+                        entry.header.record_number,
+                        entry.header.sequence,
+                        sanitized(&name.to_string())
+                            .chars()
+                            .take(60)
+                            .collect::<String>()
+                    );
+                    let data_stream_path = data_streams_dir.join(file_name);
 
-                    // Add some random bits to prevent collisions
-                    let random: [u8; 6] = rand::random();
-                    let rando_string: String = to_hex_string(&random);
-
-                    let truncated: String = orig_path_component.chars().take(150).collect();
-                    let data_stream_path =
-                        format!("{truncated}__{rando_string}_{i}_{name}.dontrun");
-
-                    if PathBuf::from(&data_stream_path).exists() {
+                    if data_stream_path.exists() {
                         return Err(anyhow!(
-                            "Tried to override an existing stream {data_stream_path} already exists!\
-                                 This is a bug, please report to github!"
+                            "The resident stream file {} already exists; extract into an empty directory.",
+                            data_stream_path.display()
                         ));
                     }
 
@@ -367,25 +368,21 @@ impl MftDump {
     }
 }
 
-fn to_hex_string(bytes: &[u8]) -> String {
-    let len = bytes.len();
-    // Each byte is represented by 2 ascii bytes.
-    let mut s = String::with_capacity(len * 2);
-
-    for byte in bytes {
-        write!(s, "{byte:02X}").expect("Writing to an allocated string cannot fail");
-    }
-
-    s
-}
-
 // adapter from python version
 // https://github.com/pallets/werkzeug/blob/9394af646038abf8b59d6f866a1ea5189f6d46b8/src/werkzeug/utils.py#L414
+/// `component` as one file name: path separators, characters Windows does not allow in file names
+/// and control characters become `_`, so a name from the evidence (`../../x`, `a:b`) can neither
+/// leave the output directory nor fail to be created.
 pub fn sanitized(component: &str) -> String {
     let mut buf = String::with_capacity(component.len());
     for c in component.chars() {
         match c {
-            _sep if path::is_separator(c) => buf.push('_'),
+            _ if path::is_separator(c)
+                || c.is_control()
+                || matches!(c, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|') =>
+            {
+                buf.push('_')
+            }
             _ => buf.push(c),
         }
     }
@@ -494,8 +491,19 @@ impl fmt::Debug for ForcedBacktrace {
 
 #[cfg(test)]
 mod tests {
-    use super::Ranges;
+    use super::{Ranges, sanitized};
     use std::str::FromStr;
+
+    #[test]
+    fn sanitized_names_stay_in_the_output_directory() {
+        assert_eq!(sanitized("../../evil"), ".._.._evil");
+        assert_eq!(sanitized("a\\b/c"), "a_b_c");
+        assert_eq!(
+            sanitized("file.txt:Zone.Identifier"),
+            "file.txt_Zone.Identifier"
+        );
+        assert_eq!(sanitized("x*?\"<>|\u{7}y"), "x_______y");
+    }
 
     #[test]
     fn it_works_with_single_number() {
