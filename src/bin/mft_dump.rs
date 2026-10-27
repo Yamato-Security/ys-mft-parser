@@ -261,7 +261,7 @@ impl MftDump {
             if let Some(data_streams_dir) = &self.data_streams_output
                 && let Ok(Some(path)) = parser.get_full_path_for_entry(&entry)
             {
-                let sanitized_path = sanitized(&path.to_string_lossy());
+                let sanitized_path = sanitized(&path);
 
                 for (i, (name, stream)) in entry
                     .iter_attributes()

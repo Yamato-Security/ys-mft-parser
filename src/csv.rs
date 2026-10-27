@@ -8,7 +8,6 @@ use serde::Serialize;
 
 use jiff::Timestamp;
 use std::io::{Read, Seek};
-use std::path::PathBuf;
 
 /// Used for CSV output
 #[derive(Serialize)]
@@ -58,7 +57,7 @@ pub struct FlatMftEntryWithName {
     #[serde(serialize_with = "crate::utils::serialize_option_timestamp_chrono_compat")]
     pub file_name_created: Option<Timestamp>,
 
-    pub full_path: PathBuf,
+    pub full_path: String,
 }
 
 impl FlatMftEntryWithName {
