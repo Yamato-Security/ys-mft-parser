@@ -24,7 +24,6 @@ pub fn mount(vfs: Vfs, mountpoint: &Path) -> std::io::Result<()> {
     fuser::mount2(NtfsFuse::new(vfs), mountpoint, &opts)
 }
 
-#[derive(Debug)]
 struct NtfsFuse {
     vfs: Vfs,
 
@@ -36,6 +35,20 @@ struct NtfsFuse {
     // Open file handles -> stream
     fh_to_stream: HashMap<u64, Arc<dyn ReadAt>>,
     next_fh: u64,
+}
+
+// The open streams are trait objects without Debug: show how many there are.
+impl std::fmt::Debug for NtfsFuse {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("NtfsFuse")
+            .field("vfs", &self.vfs)
+            .field("entry_to_ino", &self.entry_to_ino)
+            .field("ino_to_entry", &self.ino_to_entry)
+            .field("next_ino", &self.next_ino)
+            .field("open_handles", &self.fh_to_stream.len())
+            .field("next_fh", &self.next_fh)
+            .finish()
+    }
 }
 
 impl NtfsFuse {
