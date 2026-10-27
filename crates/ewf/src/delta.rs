@@ -18,7 +18,6 @@ use std::fs::{File, OpenOptions};
 use std::io::{self, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 
-
 const DELTA_MAGIC: [u8; 8] = *b"EWFDELTA";
 const DELTA_VERSION: u32 = 1;
 const DELTA_HEADER_SIZE: usize = 64;
@@ -397,7 +396,6 @@ fn scan_delta_records(file: &File) -> Result<(HashMap<u64, RecordLoc>, u64)> {
 
     Ok((index, off))
 }
-
 
 fn div_ceil_u64(n: u64, d: u64) -> u64 {
     if d == 0 {
