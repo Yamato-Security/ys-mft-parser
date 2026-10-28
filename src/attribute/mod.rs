@@ -6,8 +6,11 @@ pub mod x10;
 pub mod x20;
 pub mod x30;
 pub mod x40;
+pub mod x60;
+pub mod x70;
 pub mod x80;
 pub mod x90;
+pub mod xc0;
 
 use crate::err::Result;
 use crate::impl_serialize_for_bitflags;
@@ -25,8 +28,11 @@ use crate::attribute::data_run::decode_data_runs;
 use crate::attribute::header::{MftAttributeHeader, ResidentialHeader};
 use crate::attribute::non_resident_attr::NonResidentAttr;
 use crate::attribute::x40::ObjectIdAttr;
+use crate::attribute::x60::VolumeNameAttr;
+use crate::attribute::x70::VolumeInformationAttr;
 use crate::attribute::x80::DataAttr;
 use crate::attribute::x90::IndexRootAttr;
+use crate::attribute::xc0::ReparsePointAttr;
 use serde::Serialize;
 
 #[derive(Serialize, Clone, Debug)]
@@ -39,17 +45,15 @@ impl<'a> MftAttributeContent<'a> {
     pub fn from_record(record: &'a [u8], header: &MftAttributeHeader<'a>) -> Result<Self> {
         match &header.residential_header {
             ResidentialHeader::Resident(resident) => {
-                let data_offset = resident.data_offset as usize;
-                let data_size = resident.data_size as usize;
-                let end =
-                    data_offset
-                        .checked_add(data_size)
-                        .ok_or_else(|| crate::err::Error::Any {
-                            detail: "attribute resident data offset overflow".to_string(),
-                        })?;
-                let value = record
-                    .get(data_offset..end)
-                    .ok_or_else(|| std::io::Error::from(std::io::ErrorKind::UnexpectedEof))?;
+                let value = resident.value(record)?;
+                // A value too short for its fixed fields stays raw instead of erroring, so the
+                // attribute isn't dropped from output.
+                let raw = || {
+                    MftAttributeContent::Raw(RawAttribute::from_slice(
+                        header.type_code.clone(),
+                        value,
+                    ))
+                };
 
                 match header.type_code {
                     MftAttributeType::StandardInformation => Ok(MftAttributeContent::AttrX10(
@@ -67,13 +71,19 @@ impl<'a> MftAttributeContent<'a> {
                     MftAttributeType::ObjectId => Ok(MftAttributeContent::AttrX40(
                         ObjectIdAttr::from_stream(&mut Cursor::new(value), value.len())?,
                     )),
+                    MftAttributeType::VolumeName => Ok(MftAttributeContent::AttrX60(
+                        VolumeNameAttr::from_slice(value),
+                    )),
+                    MftAttributeType::VolumeInformation => {
+                        Ok(VolumeInformationAttr::from_slice(value)
+                            .map_or_else(|_| raw(), MftAttributeContent::AttrX70))
+                    }
+                    MftAttributeType::ReparsePoint => Ok(ReparsePointAttr::from_slice(value)
+                        .map_or_else(raw, MftAttributeContent::AttrXC0)),
                     MftAttributeType::IndexRoot => Ok(MftAttributeContent::AttrX90(
                         IndexRootAttr::from_slice(value)?,
                     )),
-                    _ => Ok(MftAttributeContent::Raw(RawAttribute::from_slice(
-                        header.type_code.clone(),
-                        value,
-                    ))),
+                    _ => Ok(raw()),
                 }
             }
             ResidentialHeader::NonResident(nonresident) => {
@@ -121,6 +131,27 @@ impl<'a> MftAttributeContent<'a> {
         }
     }
 
+    pub fn as_volume_name(&self) -> Option<&VolumeNameAttr<'a>> {
+        match self {
+            MftAttributeContent::AttrX60(content) => Some(content),
+            _ => None,
+        }
+    }
+
+    pub fn as_volume_information(&self) -> Option<&VolumeInformationAttr> {
+        match self {
+            MftAttributeContent::AttrX70(content) => Some(content),
+            _ => None,
+        }
+    }
+
+    pub fn as_reparse_point(&self) -> Option<&ReparsePointAttr<'a>> {
+        match self {
+            MftAttributeContent::AttrXC0(content) => Some(content),
+            _ => None,
+        }
+    }
+
     pub fn as_standard_info(&self) -> Option<&StandardInfoAttr> {
         match self {
             MftAttributeContent::AttrX10(content) => Some(content),
@@ -158,8 +189,11 @@ pub enum MftAttributeContent<'a> {
     AttrX20(AttributeListAttr<'a>),
     AttrX30(FileNameAttr<'a>),
     AttrX40(ObjectIdAttr),
+    AttrX60(VolumeNameAttr<'a>),
+    AttrX70(VolumeInformationAttr),
     AttrX80(DataAttr<'a>),
     AttrX90(IndexRootAttr<'a>),
+    AttrXC0(ReparsePointAttr<'a>),
     DataRun(NonResidentAttr),
 }
 
@@ -197,6 +231,8 @@ pub enum MftAttributeType {
     EaInformation = 0xD0_u32,
     /// Used for backward compatibility with OS/2 applications (HPFS)
     EA = 0xE0_u32,
+    /// Obsolete. Only present on NT4-era volumes (NTFS 1.2).
+    PropertySet = 0xF0_u32,
     /// Keys and other information about encrypted attributes (NTFS 3.0+; Windows 2000+)
     LoggedUtilityStream = 0x100_u32,
 }
@@ -256,6 +292,7 @@ impl_serialize_for_bitflags! {AttributeDataFlags}
 mod tests {
     use super::*;
     use crate::attribute::header::MftAttributeHeader;
+    use crate::entry::tests::resident_attribute_record;
 
     #[test]
     fn nonresident_attribute_allows_empty_mapping_pairs_section() {
@@ -296,6 +333,24 @@ mod tests {
                 assert!(nonresident.data_runs.is_empty());
             }
             other => panic!("expected DataRun content, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn truncated_values_stay_raw() {
+        // Values too short for $REPARSE_POINT's 8-byte header and $VOLUME_INFORMATION's 12 bytes.
+        for type_code in [
+            MftAttributeType::ReparsePoint,
+            MftAttributeType::VolumeInformation,
+        ] {
+            let value = [0x03, 0x00, 0x00, 0xA0];
+            let record = resident_attribute_record(type_code as u32, &value);
+
+            let header = MftAttributeHeader::from_slice(&record, 0).unwrap().unwrap();
+            match MftAttributeContent::from_record(&record, &header).unwrap() {
+                MftAttributeContent::Raw(raw) => assert_eq!(raw.data, value),
+                other => panic!("expected Raw content, got {other:?}"),
+            }
         }
     }
 }

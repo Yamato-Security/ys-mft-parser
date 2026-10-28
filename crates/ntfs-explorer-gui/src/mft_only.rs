@@ -75,7 +75,7 @@ impl MftOnlySnapshot {
                     .entry((entry_id, parent_id))
                     .or_default()
                     .push(DirChild {
-                        name: fname.name.to_utf8_string(),
+                        name: fname.name.to_string(),
                         entry_id,
                         namespace: fname.namespace,
                         logical_size: fname.logical_size,
@@ -157,7 +157,7 @@ impl MftOnlySnapshot {
                     }
                     let key = (
                         meta.is_allocated,
-                        namespace_rank(c.namespace.clone()),
+                        namespace_rank(c.namespace),
                         Reverse(c.entry_id),
                     );
                     Some((c.entry_id, key))

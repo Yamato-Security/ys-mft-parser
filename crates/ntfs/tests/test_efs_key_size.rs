@@ -48,7 +48,7 @@ fn test_efs_rsa_key_size_matches_ddf_ciphertext_size() {
     let first = meta.ddf.iter().find(|e| e.flags == 0).unwrap();
 
     assert_eq!(
-        rsa.size() as u32,
+        rsa.size(),
         first.encrypted_fek_length,
         "RSA modulus size should match Encrypted FEK length"
     );

@@ -262,7 +262,7 @@ fn cmd_mft(fs: &FileSystem, entry_id: u64) -> Result<()> {
         let name = if attr.header.name.is_empty() {
             "<none>".to_string()
         } else {
-            attr.header.name.to_utf8_string()
+            attr.header.name.to_string()
         };
         match &attr.header.residential_header {
             ResidentialHeader::Resident(r) => {
@@ -588,7 +588,7 @@ fn write_bodyfile_for_entry(
     let mut any = false;
     for attr in entry.iter_attributes_matching(Some(vec![MftAttributeType::DATA])) {
         let attr = attr?;
-        let stream_name = attr.header.name.to_utf8_string();
+        let stream_name = attr.header.name.to_string();
         let size = match &attr.header.residential_header {
             ResidentialHeader::Resident(r) => r.data_size as u64,
             ResidentialHeader::NonResident(nr) => nr.file_size,
