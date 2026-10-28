@@ -22,7 +22,9 @@ same problem as this fork, upstream's code is used.
 - The version is 0.9.0, and the root crate doesn't depend on `rand`.
 
 ### Fixed
-- A data run that lands before LCN 0 is rejected instead of wrapping to a huge cluster number.
+- A data run that lands before LCN 0 is rejected instead of wrapping to a huge cluster number,
+  and the first run's offset is read as signed like the others (upstream reads it unsigned, so
+  `11 01 ff` was LCN 255 instead of a damaged -1).
 - The `mft_dump -e` help still described random bytes in the file names.
 
 ### Kept from the fork
