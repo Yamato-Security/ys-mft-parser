@@ -36,7 +36,13 @@ same problem as this fork, upstream's code is used.
 
 ### CI
 - Upstream's lint job (clippy on every crate except the GUI) and MSRV job, with actions pinned by
-  commit. Tests run for the root crate; the other crates' tests need upstream's LFS disk images.
+  commit.
+- Every crate's tests run on Linux, macOS and Windows with upstream's disk images:
+  `scripts/fetch_lfs_testdata.py` downloads the LFS objects that `testdata/` points to from
+  upstream's LFS store, checks each one's size and SHA-256 against its pointer, and CI caches them
+  until the pointers change. A missing image fails the run (`NTFS_TESTDATA_REQUIRED`), and the
+  AFFLIBv3 fixtures are fetched as upstream's CI does.
+- The explorer GUI is built, linted and tested with GTK and WebKitGTK installed.
 
 ## [0.8.0] - 2026-10-27 (ys-mft-parser)
 

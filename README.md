@@ -25,6 +25,11 @@ mft = { git = "https://github.com/Yamato-Security/ys-mft-parser", rev = "<commit
 The crate keeps the name `mft` and is not published to crates.io; its versions start at 0.8.0 and
 are the fork's own (0.9.0 includes upstream 0.8.0). See [CHANGELOG.md](CHANGELOG.md).
 
+The disk images that the `ntfs`, `ewf` and `aff` crates test with are upstream's Git LFS objects,
+which this fork doesn't store. `python3 scripts/fetch_lfs_testdata.py` downloads them from upstream
+into `testdata/` (checking each one's SHA-256); `git checkout -- testdata` puts the pointer files
+back.
+
 ---
 
 [![Build Status](https://dev.azure.com/benamram/DFIR/_apis/build/status/omerbenamram.mft?branchName=master)](https://dev.azure.com/benamram/DFIR/_build/latest?definitionId=5&branchName=master)
