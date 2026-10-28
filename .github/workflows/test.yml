@@ -7,24 +7,50 @@ on:
       - main
       - 'release/**'
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
 jobs:
-  build_and_test:
-    name: Test MFT Library
+  lint:
+    name: Format and clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Run clippy
+        run: cargo clippy --workspace --exclude ntfs-explorer-gui --all-targets --all-features -- -D warnings
+
+  test:
+    name: Test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os:
-          - ubuntu-latest
-          # macos-13 runners are retired; track the latest supported macOS runner.
-          - macos-latest
-          - windows-latest
-    env:
-      CARGO_TERM_COLOR: always
-    # The NTFS / EWF / AFF disk images under testdata/ are upstream's Git LFS objects and are not
-    # stored in this fork (they would use Yamato Security's LFS quota on every run); the tests of
-    # the ntfs, ewf and aff crates skip themselves without them. The mft crate's own tests use
-    # samples/, which is in the repository.
+        include:
+          # Linux also builds the FUSE mount frontend.
+          - os: ubuntu-latest
+            features: --all-features
+          - os: macos-latest
+            features: ""
+          - os: windows-latest
+            features: ""
+    # The NTFS / EWF disk images under testdata/ are upstream's Git LFS objects and are not stored
+    # in this fork (they would use Yamato Security's LFS quota on every run). The mft crate's own
+    # tests use samples/, which is in the repository.
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -32,19 +58,27 @@ jobs:
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
 
-      - name: Check formatting
-        run: cargo fmt --all -- --check
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
 
-      - name: Run clippy
-        run: cargo clippy --all-targets --all-features -- -D warnings
-
-      # The commands above build only the root `mft` crate; the other workspace crates stopped
-      # compiling upstream without CI noticing. Compile them too (not the GTK explorer GUI).
+      # Only the root `mft` crate's tests run here: the other crates' tests need upstream's disk
+      # images. Compile those crates too, so that they can't stop building unnoticed.
       - name: Check the workspace crates
         run: cargo check --workspace --exclude ntfs-explorer-gui --all-targets
 
       - name: Run tests
-        run: cargo test --all-targets --all-features
+        run: cargo test --all-targets ${{ matrix.features }}
+
+  msrv:
+    name: MSRV (1.90)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@1.90
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+
+      - name: Check
+        run: cargo check --workspace --exclude ntfs-explorer-gui --all-targets

@@ -4,6 +4,40 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.0] - Unreleased (ys-mft-parser)
+
+Includes upstream 0.8.0 (ed20ab7, everything in its section below). Where upstream now fixes the
+same problem as this fork, upstream's code is used.
+
+### Changed
+- `MftParser::get_full_path_for_entry` returns `Option<PathBuf>` and `FlatMftEntryWithName::full_path`
+  is a `PathBuf` again; CSV and JSON write paths with `\` on every OS, as upstream and MFTECmd do.
+  This replaces the fork's port of upstream #120 (`/` everywhere), which upstream closed.
+- A cycle of parent references is cut at its lowest entry and becomes `[Orphaned]/...` (upstream's
+  resolver); it was `[Unknown]/...`. Chains of any depth resolve without recursion.
+- Paths are cached per entry and sequence number, so the stale-parent check (upstream #150) also
+  applies to names read from extension records.
+- `mft_dump -e` keeps the fork's file names, and takes upstream's export of streams stored in
+  extension records and its skipping of empty streams.
+- The version is 0.9.0, and the root crate doesn't depend on `rand`.
+
+### Fixed
+- A data run that lands before LCN 0 is rejected instead of wrapping to a huge cluster number,
+  and the first run's offset is read as signed like the others (upstream reads it unsigned, so
+  `11 01 ff` was LCN 255 instead of a damaged -1).
+- The `mft_dump -e` help still described random bytes in the file names.
+
+### Kept from the fork
+- The 4 MiB entry-size probe with the update sequence check: upstream's 64 KiB probe can't open
+  dfir_ntfs's `ntfs_frag_mft.bin`, which this fork reads (3,007 entries).
+- The stale-parent check (upstream #150 with the deleted-parent correction), the error for
+  overflowing entry offsets, `FlatMftEntryWithName::from_entry` without `expect()`, and the
+  `mft_dump -e` path traversal fix.
+
+### CI
+- Upstream's lint job (clippy on every crate except the GUI) and MSRV job, with actions pinned by
+  commit. Tests run for the root crate; the other crates' tests need upstream's LFS disk images.
+
 ## [0.8.0] - 2026-10-27 (ys-mft-parser)
 
 First version of Yamato Security's fork, based on upstream `master` 18b6c05 (after 0.7.0).
@@ -45,6 +79,54 @@ First version of Yamato Security's fork, based on upstream `master` 18b6c05 (aft
 - `actions/checkout` is pinned to a commit.
 
 ## [Unreleased]
+
+## [0.8.0] - 2026-10-27
+
+### Added
+- CSV output has `StandardInfoLastMftModified` and `FileNameLastMftModified` columns (the "MFT entry changed" times), appended after `FullPath` so existing column positions don't move (#123).
+- `windows_path`, `serialize_windows_path` and `serialize_option_windows_path` format a resolved path with `\` separators.
+- `MftEntry::iter_attribute_records_matching` yields each attribute's header and raw record without parsing its content, and `ResidentHeader::value` slices a resident attribute's value out of its record.
+- Parse `$VOLUME_NAME` (0x60) and `$VOLUME_INFORMATION` (0x70) into `VolumeNameAttr` and `VolumeInformationAttr` (label, NTFS version, volume flags) instead of raw hex.
+- `mft_dump -o bodyfile` writes Sleuth Kit bodyfile lines in the `fls -m` layout, for timelining with `mactime`: one line per `$DATA` stream and `$INDEX_ROOT` with the `$STANDARD_INFORMATION` times, and a `($FILE_NAME)` line with the `$FILE_NAME` times.
+- Parse `$REPARSE_POINT` (0xC0) into `ReparsePointAttr`: the tag, its documented name, the GUID for third-party tags, and decoded symlink, junction/mount point, AppExecLink and WSL symlink targets. Other tags keep their data as hex.
+- `mft_dump` JSON and JSONL output include each entry's `full_path` (previously only CSV had it).
+- `FlatMftEntryWithName::from_entry_with_path` builds a CSV row from an already-resolved path and the entry's extension records.
+- `MftParser::get_extension_entries` reads the extension records that hold attributes an `$ATTRIBUTE_LIST` moved out of a base record, `MftEntry::has_attribute_list` says whether there are any, and `entry::find_best_name_attribute_in` picks a file's name across its base and extension records (#148).
+- JSON output lists attributes that failed to parse in a per-entry `errors` array (only present when non-empty). Previously they were dropped silently.
+- Add `MftAttributeType::PropertySet` (`0xF0`, NT4-era `$PROPERTY_SET`).
+- JSON output includes `data_size` for resident attributes (#125).
+
+### Changed
+- **Breaking:** attributes borrow from the entry's record buffer instead of copying it. `MftAttribute`, `MftAttributeContent` and the name-carrying attribute types (`FileNameAttr`, `DataAttr`, `AttributeListAttr`, `IndexRootAttr`, ...) take a lifetime, names are borrowed UTF-16LE that decode on demand, and the `into_*` accessors are replaced by borrowing `as_*` ones (`as_file_name`, `as_data_runs`, ...). This makes parsing much faster but needs callers to keep the `MftEntry` alive while they use its attributes.
+- Faster `mft_dump`: release builds use thin LTO with one codegen unit and native release binaries are profile-guided (PGO), timestamps and flags are formatted without `core::fmt`, directory paths are cached, and I/O buffers are larger (see PERF.md).
+- CSV and JSON output write `full_path` with `\` separators on every platform, the way Windows shows NTFS paths. Linux and macOS builds used `/`. `get_full_path_for_entry` still returns a `PathBuf`, and bodyfile output keeps `fls`'s `/`.
+- JSON output of `$VOLUME_NAME` and `$VOLUME_INFORMATION` attributes changes from `{attribute_type, data}` raw hex to the parsed fields (a `$VOLUME_INFORMATION` value too short to parse stays raw hex); `MftAttributeContent` gains the `AttrX60` and `AttrX70` variants, which breaks exhaustive matches.
+- `MftAttributeContent` has a new `AttrXC0` variant, and `$REPARSE_POINT` JSON output changes from raw hex to the parsed structure.
+- Timestamps keep NTFS's full 100ns resolution and are always written with 7 fractional digits (`2007-06-30T12:50:52.2523952Z`). They were truncated to microseconds and printed with 0, 3, 6 or 9 digits, chrono style. This changes every timestamp in JSON and CSV output. `serialize_timestamp_chrono_compat` and `serialize_option_timestamp_chrono_compat` are renamed to `serialize_timestamp` and `serialize_option_timestamp`.
+- `FileNameAttr::logical_size` now holds the real size and `physical_size` the allocated size (see Fixed). Code that worked around the old swap needs to drop the workaround.
+- Update all workspace dependencies to their latest releases, including `rand` 0.10, `lru` 0.19,
+  `itertools` 0.15, `num-derive` 0.5, `criterion` 0.8, `quick-xml` 0.42, RustCrypto `md-5`/`sha1` 0.11
+  and `aes`/`des` 0.9, and `fuser` 0.18 (the FUSE frontend now uses fuser's `&self` callbacks).
+
+### Fixed
+- Full paths use the long name of a file or directory whose base record only has room for its 8.3 short name, by looking in its extension records (#148). Paths like `Windows/servicing/LCU/PACKAG~1.7/...` become `Windows/servicing/LCU/Package_for_RollupFix~.../...`; on a Windows 11 sample, about a third of all paths change this way.
+- CSV `FileSize`, `HasAlternateDataStreams` and the bodyfile's stream lines include `$DATA` attributes stored in extension records, instead of reporting such files as empty.
+- `$FILE_NAME` `logical_size` and `physical_size` were swapped: the allocated size (offset 0x28) was reported as the logical size and the real size (0x30) as the physical size. JSON output and index entries change accordingly.
+- `iter_attributes` keeps returning later attributes after one with an unknown type code, and
+  `iter_attributes_matching` skips unrequested attributes without parsing their headers.
+- Resolve the LCN of a data run that follows a sparse run relative to the last allocated run (#152).
+- Serialize flags as `A | B` again instead of bitflags 2's `TypeName(A | B)` debug format.
+- Break cycles in parent references instead of overflowing the stack while resolving paths.
+- Recover the entry size from later records when the first entry is zeroed, instead of dividing by zero.
+- `mft_dump -e` no longer writes empty files for zero-length resident streams (#23).
+- The `ntfs` crate, its tools and the NTFS explorer GUI build again against the borrowed attribute API.
+
+### CI
+- Push triggers name `master` (they said `main`, so pushes to master didn't run CI).
+- Lint and test every workspace crate (previously only the root `mft` crate), build the GUI, and check
+  the 1.90 MSRV.
+
+## [0.7.0] - 2025-12-23
 
 ### Added
 - Expand `FileAttributeFlags` with the latest Windows-defined bits for NTFS parsing.

@@ -17,9 +17,8 @@ pub struct DataRun {
 }
 
 fn decode_run_value<T: Iterator<Item = u8>>(it: &mut T, bytes: u8) -> Option<u64> {
-    if bytes == 0 || bytes > 8 {
-        // nothing to shift into place (a shift by 64 bits overflows)
-        return (bytes == 0).then_some(0);
+    if bytes == 0 {
+        return Some(0);
     }
     let mut acc = 0u64;
     for _ in 0..bytes {
@@ -48,7 +47,8 @@ fn decode_run_svalue<T: Iterator<Item = u8>>(it: &mut T, bytes: u8) -> Option<i6
 pub fn decode_data_runs(runs: &[u8]) -> Option<Vec<DataRun>> {
     let mut it = runs.iter().copied();
     let mut out: Vec<DataRun> = Vec::new();
-    let mut lcn: u64 = 0;
+    // Offsets are relative to the LCN of the previous *allocated* run; sparse runs don't move it.
+    let mut base_lcn: i64 = 0;
 
     loop {
         let h = it.next()?;
@@ -57,16 +57,22 @@ pub fn decode_data_runs(runs: &[u8]) -> Option<Vec<DataRun>> {
         }
         let offset_size = (h & 0xF0) >> 4;
         let length_size = h & 0x0F;
+        // Every run has a length, a zero-sized length field is malformed.
         if offset_size > 8 || length_size == 0 || length_size > 8 {
             return None;
         }
         let length = decode_run_value(&mut it, length_size)?;
+        // offset_size of 0 == sparse cluster
         let (abs_offset, run_type) = if offset_size != 0 {
-            let rel_offset = decode_run_svalue(&mut it, offset_size)?;
-            lcn = lcn.checked_add_signed(rel_offset)?;
-            (lcn, RunType::Standard)
+            // The first offset is signed too, relative to LCN 0: a valid LCN with its top bit set
+            // takes one more byte (`21 01 ff 00` is LCN 255; `11 01 ff` would be LCN -1).
+            base_lcn = base_lcn.checked_add(decode_run_svalue(&mut it, offset_size)?)?;
+            // A cluster before the start of the volume: the runlist is damaged.
+            if base_lcn < 0 {
+                return None;
+            }
+            (base_lcn as u64, RunType::Standard)
         } else {
-            // offset_size of 0 == sparse cluster
             (0, RunType::Sparse)
         };
         out.push(DataRun {
@@ -150,5 +156,56 @@ mod tests {
         assert_eq!(decode_data_runs(&runs), None);
         // truncated
         assert_eq!(decode_data_runs(&[0x11, 0x01]), None);
+    }
+
+    #[test]
+    fn the_first_offset_is_signed() {
+        // One byte 0xFF is -1: before the start of the volume.
+        assert_eq!(decode_data_runs(&[0x11, 0x01, 0xFF, 0x00]), None);
+        // LCN 255 needs two bytes.
+        assert_eq!(
+            decode_data_runs(&[0x21, 0x01, 0xFF, 0x00, 0x00]),
+            Some(vec![run(255, 1, RunType::Standard)])
+        );
+        // The same after a leading sparse run.
+        assert_eq!(
+            decode_data_runs(&[0x01, 0x04, 0x11, 0x01, 0xFF, 0x00]),
+            None
+        );
+    }
+
+    #[test]
+    fn test_zero_length_size_is_rejected() {
+        // Found by fuzzing: a length nibble of 0 used to shift by 64.
+        assert_eq!(decode_data_runs(&[0x50, 0x00]), None);
+        assert_eq!(decode_run_value(&mut std::iter::empty(), 0), Some(0));
+    }
+
+    #[test]
+    fn test_lcn_overflow_is_rejected() {
+        // First run at i64::MAX, second run +1.
+        let runs = [
+            0x81, 0x01, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x7F, 0x11, 0x01, 0x01, 0x00,
+        ];
+        assert_eq!(decode_data_runs(&runs), None);
+    }
+
+    #[test]
+    fn test_sparse_run_does_not_reset_lcn_base() {
+        // 1 cluster at 0x1000, 1 sparse cluster, 1 cluster at +0x100.
+        let runs = [
+            0x21, 0x01, 0x00, 0x10, 0x01, 0x01, 0x21, 0x01, 0x00, 0x01, 0x00,
+        ];
+        let decoded = decode_data_runs(&runs).unwrap();
+        let lcns: Vec<(u64, RunType)> =
+            decoded.iter().map(|r| (r.lcn_offset, r.run_type)).collect();
+        assert_eq!(
+            lcns,
+            vec![
+                (0x1000, RunType::Standard),
+                (0, RunType::Sparse),
+                (0x1100, RunType::Standard),
+            ]
+        );
     }
 }

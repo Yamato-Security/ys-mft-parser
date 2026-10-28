@@ -5,21 +5,16 @@ crate, the Windows Master File Table parser used by
 [Juntei](https://github.com/Yamato-Security/juntei). The complete upstream history and the
 MIT / Apache-2.0 license are retained; everything below this section is upstream's README.
 
-The fork applies upstream pull requests that were waiting for review and fixes found while building
-Juntei, so that damaged or crafted `$MFT` files are parsed instead of crashing the process:
+The fork follows upstream (currently 0.8.0) and adds fixes found while building Juntei, so that
+damaged, crafted or partly reused `$MFT` files are parsed correctly instead of crashing the process:
 
 | Change | Source |
 | --- | --- |
-| A parent-reference loop (or a chain of thousands of directories) no longer overflows the stack | fork (replaces upstream #117) |
-| An all-zero or garbage first header no longer divides by zero or sizes every read from it; the entry size comes from the first valid header (wiped first entries are recovered) | upstream #119 (Joel Uckelman) + bounds |
-| Full paths use `/` on every OS (`get_full_path_for_entry` returns a `String`) | upstream #120 (Mason Bartle) |
-| A file whose parent directory's record was reused is `[Orphaned]` instead of getting the new owner's path | upstream #150 (mcardonaes) |
+| A file whose parent directory's record was reused is `[Orphaned]` instead of getting the new owner's path (1,242 entries of DFIRArtifactMuseum's Win10 RathbunVM `$MFT` were placed in the wrong directory) | upstream #150 (mcardonaes), open |
 | A deleted file in a deleted directory keeps its path (the parent's sequence number is one ahead) | fork |
-| Data runs after a sparse run point at the right clusters (sparse and compressed files) | fork |
-| Malformed data runs, huge entry numbers and `FlatMftEntryWithName` no longer panic | fork |
-| The `ntfs` crate and the explorer GUI compile again (broken upstream since the UTF-16 refactor) | fork |
+| The entry size is probed over the first 4 MiB and checked against the update sequence array, so MFTs whose first entries are wiped still open (upstream probes 64 KiB) | upstream #119 (Joel Uckelman) + fork |
+| Huge entry numbers, a data run before LCN 0 and `FlatMftEntryWithName` no longer wrap or panic | fork |
 | `mft_dump -e` names resident stream files deterministically and sanitizes the stream name (an alternate data stream named `../../x` was written outside the output directory) | fork |
-| The `log` crate's `release_max_level_debug` is enabled only for `mft_dump` | upstream #149 (Lej77) |
 
 Use it from Cargo by commit:
 
@@ -28,7 +23,7 @@ mft = { git = "https://github.com/Yamato-Security/ys-mft-parser", rev = "<commit
 ```
 
 The crate keeps the name `mft` and is not published to crates.io; its versions start at 0.8.0 and
-are the fork's own. See [CHANGELOG.md](CHANGELOG.md).
+are the fork's own (0.9.0 includes upstream 0.8.0). See [CHANGELOG.md](CHANGELOG.md).
 
 ---
 
