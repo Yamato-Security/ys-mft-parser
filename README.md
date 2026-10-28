@@ -15,6 +15,20 @@ damaged, crafted or partly reused `$MFT` files are parsed correctly instead of c
 | The entry size is probed over the first 4 MiB and checked against the update sequence array, so MFTs whose first entries are wiped still open (upstream probes 64 KiB) | upstream #119 (Joel Uckelman) + fork |
 | Huge entry numbers, a data run before LCN 0 and `FlatMftEntryWithName` no longer wrap or panic | fork |
 | `mft_dump -e` names resident stream files deterministically and sanitizes the stream name (an alternate data stream named `../../x` was written outside the output directory) | fork |
+| A parent whose record was reused is still named when its old version left an extension record behind (Harel Segev's "orphaned attributes") | fork |
+
+Paths that can't be fully resolved start with a placeholder, as upstream's do:
+
+- `[Orphaned]`: the parent is gone. The name points at entry 0 or at itself, the parents form a
+  cycle (cut at its lowest entry), or the parent's record was reused and its old version left no
+  name behind.
+- `[Unknown]`: the parent's record can't be read (damaged, or beyond the end of the MFT) or isn't a
+  directory.
+- No path: the entry has no `$FILE_NAME` and isn't an extension record. Its parent may still
+  exist, so it isn't called an orphan.
+
+`tests/test_path_pitfalls.rs` builds an MFT for each of the pitfalls in Harel Segev's
+[Resolving File Paths Using the MFT](https://harelsegev.github.io/posts/resolving-file-paths-using-the-mft/).
 
 Use it from Cargo by commit:
 
