@@ -64,11 +64,9 @@ pub fn decode_data_runs(runs: &[u8]) -> Option<Vec<DataRun>> {
         let length = decode_run_value(&mut it, length_size)?;
         // offset_size of 0 == sparse cluster
         let (abs_offset, run_type) = if offset_size != 0 {
-            if out.is_empty() {
-                base_lcn = decode_run_value(&mut it, offset_size)? as i64;
-            } else {
-                base_lcn = base_lcn.checked_add(decode_run_svalue(&mut it, offset_size)?)?;
-            }
+            // The first offset is signed too, relative to LCN 0: a valid LCN with its top bit set
+            // takes one more byte (`21 01 ff 00` is LCN 255; `11 01 ff` would be LCN -1).
+            base_lcn = base_lcn.checked_add(decode_run_svalue(&mut it, offset_size)?)?;
             // A cluster before the start of the volume: the runlist is damaged.
             if base_lcn < 0 {
                 return None;
@@ -158,6 +156,22 @@ mod tests {
         assert_eq!(decode_data_runs(&runs), None);
         // truncated
         assert_eq!(decode_data_runs(&[0x11, 0x01]), None);
+    }
+
+    #[test]
+    fn the_first_offset_is_signed() {
+        // One byte 0xFF is -1: before the start of the volume.
+        assert_eq!(decode_data_runs(&[0x11, 0x01, 0xFF, 0x00]), None);
+        // LCN 255 needs two bytes.
+        assert_eq!(
+            decode_data_runs(&[0x21, 0x01, 0xFF, 0x00, 0x00]),
+            Some(vec![run(255, 1, RunType::Standard)])
+        );
+        // The same after a leading sparse run.
+        assert_eq!(
+            decode_data_runs(&[0x01, 0x04, 0x11, 0x01, 0xFF, 0x00]),
+            None
+        );
     }
 
     #[test]
