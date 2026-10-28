@@ -460,7 +460,11 @@ pub(crate) fn is_long_name(name: &FileNameAttr<'_>) -> bool {
     name.namespace != FileNamespace::DOS
 }
 
-fn best_name_of<'a>(entries: impl IntoIterator<Item = &'a MftEntry>) -> Option<FileNameAttr<'a>> {
+/// The best name among the names of `entries`, none of which counts as the base record: the
+/// first `Win32` name, else the first long one, else the first.
+pub(crate) fn best_name_of<'a>(
+    entries: impl IntoIterator<Item = &'a MftEntry>,
+) -> Option<FileNameAttr<'a>> {
     let mut first: Option<FileNameAttr<'a>> = None;
     let mut first_long: Option<FileNameAttr<'a>> = None;
     let mut best_win32: Option<FileNameAttr<'a>> = None;

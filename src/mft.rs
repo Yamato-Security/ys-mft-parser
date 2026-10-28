@@ -1,6 +1,6 @@
 use crate::FileNameAttr;
 use crate::attribute::{MftAttributeContent, MftAttributeType};
-use crate::entry::{MftEntry, find_best_name_attribute_in, is_long_name};
+use crate::entry::{MftEntry, best_name_of, find_best_name_attribute_in, is_long_name};
 use crate::err::{Error, Result};
 
 use crate::EntryHeader;
@@ -309,19 +309,10 @@ impl<T: Read + Seek> MftParser<T> {
         match name {
             // A parent that isn't a directory can't be trusted.
             Some(_) if !entry.is_dir() => PathStep::Final(PathBuf::from("[Unknown]")),
-            Some((name, parent)) => {
-                let parent = match parent {
-                    // MFT entry 5 is the root path.
-                    (5, _) => PathParent::Root,
-                    (0, _) => PathParent::Orphan,
-                    (id, _) if id == entry.header.record_number => {
-                        trace!("Found self-referential file path, for entry ID {id}");
-                        PathParent::Orphan
-                    }
-                    reference => PathParent::Entry(reference),
-                };
-                PathStep::Named { name, parent }
-            }
+            Some((name, parent)) => PathStep::Named {
+                name,
+                parent: Self::path_parent(entry.header.record_number, parent),
+            },
             // I have a parent, which doesn't have a filename attribute.
             None => match entry.header.base_reference.entry {
                 0 => PathStep::Final(PathBuf::new()),
@@ -331,9 +322,24 @@ impl<T: Read + Seek> MftParser<T> {
         }
     }
 
+    /// Where the parent reference of entry `entry_id`'s name leads.
+    fn path_parent(entry_id: u64, parent: Reference) -> PathParent {
+        match parent {
+            // MFT entry 5 is the root path.
+            (5, _) => PathParent::Root,
+            (0, _) => PathParent::Orphan,
+            (id, _) if id == entry_id => {
+                trace!("Found self-referential file path, for entry ID {id}");
+                PathParent::Orphan
+            }
+            reference => PathParent::Entry(reference),
+        }
+    }
+
     /// Classifies the entry that `reference` points to, as the parent of another entry. A
     /// reference to an older version of a reused entry (another sequence number) doesn't lead to
-    /// the entry's current path, so its children are orphans (omerbenamram/mft#150).
+    /// the entry's current path (omerbenamram/mft#150). Its children are orphans, unless the old
+    /// version left a name behind in an extension record (see [`MftParser::leftover_name`]).
     fn referenced_step(&mut self, (entry_id, sequence): Reference) -> PathStep {
         match self.get_entry(entry_id) {
             Ok(parent) if !is_referenced_version(&parent, sequence) => {
@@ -342,12 +348,46 @@ impl<T: Read + Seek> MftParser<T> {
                      {sequence}, actual sequence {}",
                     parent.header.sequence
                 );
-                PathStep::Final(PathBuf::from("[Orphaned]"))
+                match self.leftover_name((entry_id, sequence)) {
+                    Some((name, grandparent)) => PathStep::Named {
+                        name,
+                        parent: Self::path_parent(entry_id, grandparent),
+                    },
+                    None => PathStep::Final(PathBuf::from("[Orphaned]")),
+                }
             }
             Ok(parent) => self.path_step(&parent),
             // Parent is maybe corrupted or incomplete, use a sentinel instead.
             Err(_) => PathStep::Final(PathBuf::from("[Unknown]")),
         }
+    }
+
+    /// The name and parent reference of an older version of a reused entry, from the extension
+    /// records it left behind: free records whose base reference still names that version.
+    /// When a directory whose long name had moved to an extension record is deleted and its base
+    /// record reused, its children can still be placed (Harel Segev's "orphaned attributes",
+    /// <https://harelsegev.github.io/posts/resolving-file-paths-using-the-mft/>). Looks the
+    /// records up in the extension index, which is built on first use by scanning the MFT.
+    fn leftover_name(&mut self, (entry_id, sequence): Reference) -> Option<(String, Reference)> {
+        let ids = self.extensions_index().get(&entry_id)?.clone();
+        let leftovers: Vec<MftEntry> = ids
+            .into_iter()
+            .filter_map(|id| self.get_entry(id).ok())
+            .filter(|record| {
+                let base = &record.header.base_reference;
+                !record.is_allocated() && base.entry == entry_id && base.sequence == sequence
+            })
+            .collect();
+        // None of them is the base record, so none of their names takes precedence: Win32 over
+        // POSIX over DOS across all of them.
+        let name = best_name_of(&leftovers)?;
+        trace!(
+            "Found the name of entry ID {entry_id} (sequence {sequence}) in a leftover extension record"
+        );
+        Some((
+            name.name.to_utf8_string(),
+            (name.parent.entry, name.parent.sequence),
+        ))
     }
 
     /// Resolves the path of a directory, given its own step, by walking up its ancestors.

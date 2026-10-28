@@ -22,10 +22,19 @@ same problem as this fork, upstream's code is used.
 - The version is 0.9.0, and the root crate doesn't depend on `rand`.
 
 ### Fixed
+- A file whose parent directory was deleted and its base record reused is placed under the
+  parent's old name when the parent left an extension record behind that still points at its old
+  version (Harel Segev's "orphaned attributes"); it was `[Orphaned]`.
 - A data run that lands before LCN 0 is rejected instead of wrapping to a huge cluster number,
   and the first run's offset is read as signed like the others (upstream reads it unsigned, so
   `11 01 ff` was LCN 255 instead of a damaged -1).
 - The `mft_dump -e` help still described random bytes in the file names.
+
+### Tests
+- `tests/test_path_pitfalls.rs`: an MFT built for each pitfall of resolving paths (reused and
+  deleted parents, short names and hard links, names only in extension records behind a resident
+  or non-resident `$ATTRIBUTE_LIST`, files without a `$FILE_NAME`, leftover extension records,
+  cycles, unusable parents). The README defines `[Orphaned]` and `[Unknown]`.
 
 ### Kept from the fork
 - The 4 MiB entry-size probe with the update sequence check: upstream's 64 KiB probe can't open
