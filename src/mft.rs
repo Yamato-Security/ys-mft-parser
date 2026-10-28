@@ -1,6 +1,6 @@
 use crate::FileNameAttr;
 use crate::attribute::{MftAttributeContent, MftAttributeType};
-use crate::entry::{MftEntry, find_best_name_attribute_in, is_long_name};
+use crate::entry::{MftEntry, best_name_of, find_best_name_attribute_in, is_long_name};
 use crate::err::{Error, Result};
 
 use crate::EntryHeader;
@@ -378,8 +378,9 @@ impl<T: Read + Seek> MftParser<T> {
                 !record.is_allocated() && base.entry == entry_id && base.sequence == sequence
             })
             .collect();
-        let (first, rest) = leftovers.split_first()?;
-        let name = find_best_name_attribute_in(first, rest)?;
+        // None of them is the base record, so none of their names takes precedence: Win32 over
+        // POSIX over DOS across all of them.
+        let name = best_name_of(&leftovers)?;
         trace!(
             "Found the name of entry ID {entry_id} (sequence {sequence}) in a leftover extension record"
         );

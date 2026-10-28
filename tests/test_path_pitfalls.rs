@@ -379,3 +379,50 @@ fn an_unusable_parent_is_unknown() {
     assert_eq!(path_of(&mut parser, 48), path("[Unknown]/child"));
     assert_eq!(path_of(&mut parser, 49), path("[Unknown]/far"));
 }
+
+/// Leftover extension records have no base record among them, so the best name wins across all of
+/// them (Win32 over POSIX over DOS), whatever their order.
+#[test]
+fn leftover_names_are_ranked_across_all_records() {
+    for (posix, win32) in [(51, 52), (52, 51)] {
+        let mut records = users();
+        records.extend([
+            Record::new(50, 2).named("reuser.bin", WIN32, ROOT),
+            Record::new(posix, 2)
+                .dir()
+                .free()
+                .extension_of((50, 1))
+                .named("posix-old", POSIX, (20, 1)),
+            Record::new(win32, 2)
+                .dir()
+                .free()
+                .extension_of((50, 1))
+                .named("Win32 Old", WIN32, (20, 1)),
+            Record::new(53, 2).free().named("child.txt", WIN32, (50, 1)),
+        ]);
+        let mut parser = build(&records);
+        assert_eq!(
+            path_of(&mut parser, 53),
+            path("Users/Win32 Old/child.txt"),
+            "POSIX name in record {posix}"
+        );
+    }
+    // A short name is used only when it is all there is.
+    let mut records = users();
+    records.extend([
+        Record::new(50, 2).named("reuser.bin", WIN32, ROOT),
+        Record::new(51, 2)
+            .dir()
+            .free()
+            .extension_of((50, 1))
+            .named("OLDDIR~1", DOS, (20, 1)),
+        Record::new(52, 2)
+            .dir()
+            .free()
+            .extension_of((50, 1))
+            .named("old dir", POSIX, (20, 1)),
+        Record::new(53, 2).free().named("child.txt", WIN32, (50, 1)),
+    ]);
+    let mut parser = build(&records);
+    assert_eq!(path_of(&mut parser, 53), path("Users/old dir/child.txt"));
+}
