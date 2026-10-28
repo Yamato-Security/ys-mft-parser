@@ -1,7 +1,7 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-The crate root lives in `src/lib.rs` with supporting modules in `src/attribute`, `src/mft.rs`, and `src/utils.rs`. CLI code for the `mft_dump` binary sits in `src/bin/mft_dump.rs`. Reusable fixtures used by unit tests live in `src/tests`, while integration tests belong under `tests/`. Sample MFT images and large fixtures live in `samples/` and `testdata/`; keep new assets small and explain their origin in PR descriptions. README snippets are kept in sync via `tests/readme.rs` and the `doc-comment` harness.
+The crate root lives in `src/lib.rs` with supporting modules in `src/attribute`, `src/mft.rs`, and `src/utils.rs`. CLI code for the `ys-mft-parser` binary sits in `src/bin/ys-mft-parser.rs`. Reusable fixtures used by unit tests live in `src/tests`, while integration tests belong under `tests/`. Sample MFT images and large fixtures live in `samples/` and `testdata/`; keep new assets small and explain their origin in PR descriptions. README snippets are kept in sync via `tests/readme.rs` and the `doc-comment` harness.
 
 ## Build, Test, and Development Commands
 Run `cargo build --all-targets` for a full local compile, and `cargo test --all-features` before pushing to mirror CI. Use `cargo bench --bench benchmark` when touching performance-critical code paths. `cargo fmt` and `cargo clippy --all-targets --all-features` should produce a clean workspace; address new lints or explain why they cannot be resolved.

@@ -48,7 +48,7 @@ lru = "0.19.0"
 itertools = "0.15"
 jiff = { version = "0.2.38", default-features = false, features = ["std", "alloc", "serde", "perf-inline"] }
 
-# `mft_dump` dependencies
+# `ys-mft-parser` dependencies
 clap = { version = "4", optional = true }
 anyhow = { version = "1.0", optional = true }
 simplelog = { version = "0.12", optional = true }
@@ -58,8 +58,8 @@ sonic-rs = { version = "0.5.10", optional = true }
 utf16-simd = "0.1.1"
 
 [features]
-default = ["mft_dump"]
-mft_dump = ["anyhow", "simplelog", "dialoguer", "indoc", "clap", "sonic-rs", "log/release_max_level_debug"]
+default = ["ys-mft-parser"]
+ys-mft-parser = ["anyhow", "simplelog", "dialoguer", "indoc", "clap", "sonic-rs", "log/release_max_level_debug"]
 
 [dev-dependencies]
 criterion = "0.8"
@@ -76,8 +76,8 @@ rexpect = "0.7"
 
 
 [[bin]]
-name = "mft_dump"
-required-features = ["mft_dump"]
+name = "ys-mft-parser"
+required-features = ["ys-mft-parser"]
 
 [[bench]]
 name = "benchmark"

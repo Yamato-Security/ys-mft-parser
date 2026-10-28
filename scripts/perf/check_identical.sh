@@ -1,5 +1,5 @@
 #!/bin/bash
-# Byte-compares the full output (stdout file + stderr) of two `mft_dump` binaries in every
+# Byte-compares the full output (stdout file + stderr) of two `ys-mft-parser` binaries in every
 # output format. Use it to prove that a performance change does not change output.
 #
 # usage: scripts/perf/check_identical.sh BEFORE_BIN AFTER_BIN [INPUT]

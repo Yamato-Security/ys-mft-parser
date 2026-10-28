@@ -10,6 +10,8 @@ Includes upstream 0.8.0 (ed20ab7, everything in its section below). Where upstre
 same problem as this fork, upstream's code is used.
 
 ### Changed
+- The command is named after the repository: `ys-mft-parser`, not `mft_dump` (and so is the
+  feature that builds it, `ys-mft-parser`, on by default). The entries below keep the old name.
 - `MftParser::get_full_path_for_entry` returns `Option<PathBuf>` and `FlatMftEntryWithName::full_path`
   is a `PathBuf` again; CSV and JSON write paths with `\` on every OS, as upstream and MFTECmd do.
   This replaces the fork's port of upstream #120 (`/` everywhere), which upstream closed.

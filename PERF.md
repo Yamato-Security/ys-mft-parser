@@ -19,8 +19,8 @@ Pick the next hypothesis ID: `H{N}` (monotonic, don’t reuse IDs).
 
 - **Branch**: `perf/h{N}-{short-slug}` (example: `perf/h6-resident-slices`)
 - **Saved binaries** (so benchmarks are stable and diffable):
-  - `target/release/mft_dump.h{N}_before`
-  - `target/release/mft_dump.h{N}_after`
+  - `target/release/ys-mft-parser.h{N}_before`
+  - `target/release/ys-mft-parser.h{N}_after`
 - **Hyperfine JSON**:
   - `target/h{N}-before-vs-after.hyperfine.json`
 - **Samply profiles** (merged by running many iterations):
@@ -34,13 +34,13 @@ These are the commands we benchmark/profiler-record. Keep them unchanged unless 
 W1 (JSONL, end-to-end, write suppressed):
 
 ```bash
-./target/release/mft_dump samples/MFT -o jsonl -f /dev/null --no-confirm-overwrite
+./target/release/ys-mft-parser samples/MFT -o jsonl -f /dev/null --no-confirm-overwrite
 ```
 
 W2 (CSV, end-to-end, write suppressed):
 
 ```bash
-./target/release/mft_dump samples/MFT -o csv -f /dev/null --no-confirm-overwrite
+./target/release/ys-mft-parser samples/MFT -o csv -f /dev/null --no-confirm-overwrite
 ```
 
 ### Step-by-step: run an experiment end-to-end
@@ -56,8 +56,8 @@ git checkout -b perf/h{N}-{short-slug}
 
 ```bash
 cd /Users/omerba/Workspace/mft
-cargo build --release --bin mft_dump
-cp -f target/release/mft_dump target/release/mft_dump.h{N}_before
+cargo build --release --bin ys-mft-parser
+cp -f target/release/ys-mft-parser target/release/ys-mft-parser.h{N}_before
 ```
 
 #### 2) Record a stable **before** profile (Samply)
@@ -70,7 +70,7 @@ mkdir -p target/samply
 samply record --save-only --unstable-presymbolicate --reuse-threads --main-thread-only \
   -o target/samply/h{N}_before.profile.json.gz \
   --iteration-count 200 -- \
-  ./target/release/mft_dump.h{N}_before samples/MFT -o jsonl -f /dev/null --no-confirm-overwrite
+  ./target/release/ys-mft-parser.h{N}_before samples/MFT -o jsonl -f /dev/null --no-confirm-overwrite
 ```
 
 To view (serve locally and open the printed Firefox Profiler URL):
@@ -83,7 +83,7 @@ samply load --no-open -P 4033 target/samply/h{N}_before.profile.json.gz
 What to record from the UI:
 - Use **Call Tree** + **Invert call stack** for top **leaf/self** frames.
 - Use normal Call Tree for “big buckets” (inclusive time).
-- Filter stack for `mft::` / `mft_dump::` when looking for in-crate work.
+- Filter stack for `mft::` / `ys_mft_parser::` when looking for in-crate work.
 
 #### 3) Implement the change (keep it tight)
 
@@ -94,8 +94,8 @@ What to record from the UI:
 
 ```bash
 cd /Users/omerba/Workspace/mft
-cargo build --release --bin mft_dump
-cp -f target/release/mft_dump target/release/mft_dump.h{N}_after
+cargo build --release --bin ys-mft-parser
+cp -f target/release/ys-mft-parser target/release/ys-mft-parser.h{N}_after
 ```
 
 #### 5) Benchmark **before vs after in the same hyperfine command**
@@ -106,8 +106,8 @@ We always run both saved binaries in a single `hyperfine` invocation and export 
 cd /Users/omerba/Workspace/mft
 hyperfine --warmup 5 --runs 40 \
   --export-json target/h{N}-before-vs-after.hyperfine.json \
-  './target/release/mft_dump.h{N}_before samples/MFT -o jsonl -f /dev/null --no-confirm-overwrite' \
-  './target/release/mft_dump.h{N}_after  samples/MFT -o jsonl -f /dev/null --no-confirm-overwrite'
+  './target/release/ys-mft-parser.h{N}_before samples/MFT -o jsonl -f /dev/null --no-confirm-overwrite' \
+  './target/release/ys-mft-parser.h{N}_after  samples/MFT -o jsonl -f /dev/null --no-confirm-overwrite'
 ```
 
 Extract medians quickly (no jq required):
@@ -130,8 +130,8 @@ If variance is high, amortize noise by running multiple iterations inside each h
 cd /Users/omerba/Workspace/mft
 hyperfine --warmup 2 --runs 15 \
   --export-json target/h{N}-before-vs-after.hyperfine.json \
-  --command-name 'before (20x)' "bash -lc 'for i in {1..20}; do ./target/release/mft_dump.h{N}_before samples/MFT -o jsonl -f /dev/null --no-confirm-overwrite; done'" \
-  --command-name 'after  (20x)' "bash -lc 'for i in {1..20}; do ./target/release/mft_dump.h{N}_after  samples/MFT -o jsonl -f /dev/null --no-confirm-overwrite; done'"
+  --command-name 'before (20x)' "bash -lc 'for i in {1..20}; do ./target/release/ys-mft-parser.h{N}_before samples/MFT -o jsonl -f /dev/null --no-confirm-overwrite; done'" \
+  --command-name 'after  (20x)' "bash -lc 'for i in {1..20}; do ./target/release/ys-mft-parser.h{N}_after  samples/MFT -o jsonl -f /dev/null --no-confirm-overwrite; done'"
 ```
 
 #### 6) Record an **after** profile (Samply)
@@ -141,7 +141,7 @@ cd /Users/omerba/Workspace/mft
 samply record --save-only --unstable-presymbolicate --reuse-threads --main-thread-only \
   -o target/samply/h{N}_after.profile.json.gz \
   --iteration-count 200 -- \
-  ./target/release/mft_dump.h{N}_after samples/MFT -o jsonl -f /dev/null --no-confirm-overwrite
+  ./target/release/ys-mft-parser.h{N}_after samples/MFT -o jsonl -f /dev/null --no-confirm-overwrite
 ```
 
 View:
@@ -158,8 +158,8 @@ samply load --no-open -P 4034 target/samply/h{N}_after.profile.json.gz
 ```bash
 cd /Users/omerba/Workspace/mft
 rm -f /tmp/mft_before.jsonl /tmp/mft_after.jsonl
-./target/release/mft_dump.h{N}_before samples/MFT --ranges 0-200 -o jsonl -f /tmp/mft_before.jsonl --no-confirm-overwrite
-./target/release/mft_dump.h{N}_after  samples/MFT --ranges 0-200 -o jsonl -f /tmp/mft_after.jsonl  --no-confirm-overwrite
+./target/release/ys-mft-parser.h{N}_before samples/MFT --ranges 0-200 -o jsonl -f /tmp/mft_before.jsonl --no-confirm-overwrite
+./target/release/ys-mft-parser.h{N}_after  samples/MFT --ranges 0-200 -o jsonl -f /tmp/mft_after.jsonl  --no-confirm-overwrite
 python3 - <<'PY'
 import json
 b = [json.loads(l) for l in open("/tmp/mft_before.jsonl")]
@@ -221,13 +221,13 @@ the scripts in `scripts/perf/`:
 
 ```bash
 # 1. Prove the change does not alter output (byte-for-byte, all formats, stderr included).
-scripts/perf/check_identical.sh ./mft_dump.before ./mft_dump.after
+scripts/perf/check_identical.sh ./ys-mft-parser.before ./ys-mft-parser.after
 
 # 2. Deterministic instruction counts (valgrind/cachegrind, reproducible to <0.1%).
-scripts/perf/instructions.sh -f jsonl ./mft_dump.before ./mft_dump.after
+scripts/perf/instructions.sh -f jsonl ./ys-mft-parser.before ./ys-mft-parser.after
 
 # 3. Interleaved A/B wall clock (alternates binaries every round; report median and min).
-scripts/perf/ab_bench.py --runs 30 --format jsonl ./mft_dump.before ./mft_dump.after
+scripts/perf/ab_bench.py --runs 30 --format jsonl ./ys-mft-parser.before ./ys-mft-parser.after
 ```
 
 Instruction counts don't see syscalls or cache misses, so I/O changes are measured with
@@ -242,19 +242,19 @@ copies' parent references all point into the first copy, which defeats path cach
 All commands assume:
 
 ```bash
-cargo build --release --bin mft_dump
+cargo build --release --bin ys-mft-parser
 ```
 
 - **W1 (JSONL, end-to-end)**:
 
 ```bash
-./target/release/mft_dump samples/MFT -o jsonl -f /dev/null --no-confirm-overwrite
+./target/release/ys-mft-parser samples/MFT -o jsonl -f /dev/null --no-confirm-overwrite
 ```
 
 - **W2 (CSV, end-to-end)**:
 
 ```bash
-./target/release/mft_dump samples/MFT -o csv -f /dev/null --no-confirm-overwrite
+./target/release/ys-mft-parser samples/MFT -o csv -f /dev/null --no-confirm-overwrite
 ```
 
 ## Baseline environment (2025-12-23)
@@ -285,19 +285,19 @@ End-to-end JSONL profile (merge many iterations for stability):
 ```bash
 mkdir -p target/samply
 samply record --save-only --unstable-presymbolicate --reuse-threads --main-thread-only \
-  -o target/samply/mft_dump_jsonl_merged.profile.json.gz \
+  -o target/samply/ys_mft_parser_jsonl_merged.profile.json.gz \
   --iteration-count 200 -- \
-  ./target/release/mft_dump samples/MFT -o jsonl -f /dev/null --no-confirm-overwrite
+  ./target/release/ys-mft-parser samples/MFT -o jsonl -f /dev/null --no-confirm-overwrite
 
-samply load target/samply/mft_dump_jsonl_merged.profile.json.gz
+samply load target/samply/ys_mft_parser_jsonl_merged.profile.json.gz
 ```
 
 What to look at:
 - **Call Tree + “Invert call stack”** for top leaf frames (true hot spots).
 - **Call Tree (non-inverted)** for inclusive costs (big buckets like “serialization”).
-- Filter stack: `mft::` / `mft_dump::` to focus on crate code.
+- Filter stack: `mft::` / `ys_mft_parser::` to focus on crate code.
 
-#### Baseline profile notes (from `mft_dump_jsonl_merged`)
+#### Baseline profile notes (from `ys_mft_parser_jsonl_merged`)
 
 Top inclusive buckets:
 - `MftEntry::serialize` dominates (serialization is the main cost center).
@@ -317,14 +317,14 @@ Record:
 ```bash
 mkdir -p target/xctrace
 xcrun xctrace record --no-prompt --template 'CPU Counters' \
-  --output target/xctrace/mft_dump_jsonl_cpu_counters.trace \
-  --launch -- ./target/release/mft_dump samples/MFT -o jsonl -f /dev/null --no-confirm-overwrite
+  --output target/xctrace/ys_mft_parser_jsonl_cpu_counters.trace \
+  --launch -- ./target/release/ys-mft-parser samples/MFT -o jsonl -f /dev/null --no-confirm-overwrite
 ```
 
 Explore/export:
 
 ```bash
-xcrun xctrace export --input target/xctrace/mft_dump_jsonl_cpu_counters.trace --toc
+xcrun xctrace export --input target/xctrace/ys_mft_parser_jsonl_cpu_counters.trace --toc
 ```
 
 We’ve confirmed these schemas exist in the trace:
@@ -348,7 +348,7 @@ Each item includes:
 - **Evidence**: `MftEntry::serialize` is ~3/4 of inclusive time in samply; leaf frames show `memmove` and string escaping.
 - **Change**:
   - Stop building a `Vec<MftAttribute>` inside `MftEntry::serialize` (stream attributes as a `SerializeSeq`).
-  - Stop serializing into a fresh `Vec<u8>` per entry in `mft_dump::print_json_entry` (reuse a buffer).
+  - Stop serializing into a fresh `Vec<u8>` per entry in `ys_mft_parser::print_json_entry` (reuse a buffer).
   - Use a faster serde-compatible JSON serializer for JSONL (`sonic-rs`).
 - **Success metric**: W1 improves by **≥ 15%** on median time.
 - **Guardrails**:
@@ -379,7 +379,7 @@ Each item includes:
 
 **What changed**
 - Stream `attributes` in `MftEntry` serialization (avoid allocating `Vec<MftAttribute>`).
-- Reuse a `Vec<u8>` JSON buffer in `mft_dump` (avoid per-entry allocation).
+- Reuse a `Vec<u8>` JSON buffer in `ys-mft-parser` (avoid per-entry allocation).
 - Switch JSONL output from `serde_json` to **`sonic-rs`** (serde-compatible, SIMD-focused).
   - Pretty JSON (`-o json`) still uses `serde_json` for formatting.
 
@@ -389,8 +389,8 @@ Single `hyperfine` run comparing the saved binaries:
 
 ```bash
 hyperfine --warmup 3 --runs 30 \
-  './target/release/mft_dump.h1_before samples/MFT -o jsonl -f /dev/null --no-confirm-overwrite' \
-  './target/release/mft_dump.h1_after3_sonic samples/MFT -o jsonl -f /dev/null --no-confirm-overwrite'
+  './target/release/ys-mft-parser.h1_before samples/MFT -o jsonl -f /dev/null --no-confirm-overwrite' \
+  './target/release/ys-mft-parser.h1_after3_sonic samples/MFT -o jsonl -f /dev/null --no-confirm-overwrite'
 ```
 
 Extracted medians (from `target/h1-before-vs-after.hyperfine.json`):
@@ -424,8 +424,8 @@ Single `hyperfine` run comparing the saved binaries:
 
 ```bash
 hyperfine --warmup 3 --runs 30 \
-  './target/release/mft_dump.h2_before samples/MFT -o jsonl -f /dev/null --no-confirm-overwrite' \
-  './target/release/mft_dump.h2_after samples/MFT -o jsonl -f /dev/null --no-confirm-overwrite'
+  './target/release/ys-mft-parser.h2_before samples/MFT -o jsonl -f /dev/null --no-confirm-overwrite' \
+  './target/release/ys-mft-parser.h2_after samples/MFT -o jsonl -f /dev/null --no-confirm-overwrite'
 ```
 
 Extracted medians (from `target/h2-before-vs-after.hyperfine.json`):
@@ -461,8 +461,8 @@ Single `hyperfine` run comparing saved binaries:
 
 ```bash
 hyperfine --warmup 5 --runs 40 \
-  './target/release/mft_dump.h3_before samples/MFT -o jsonl -f /dev/null --no-confirm-overwrite' \
-  './target/release/mft_dump.h3_after_final samples/MFT -o jsonl -f /dev/null --no-confirm-overwrite'
+  './target/release/ys-mft-parser.h3_before samples/MFT -o jsonl -f /dev/null --no-confirm-overwrite' \
+  './target/release/ys-mft-parser.h3_after_final samples/MFT -o jsonl -f /dev/null --no-confirm-overwrite'
 ```
 
 Extracted medians (from `target/h3-before-vs-after-final.hyperfine.json`):
@@ -503,8 +503,8 @@ Single `hyperfine` run comparing the saved binaries:
 
 ```bash
 hyperfine --warmup 5 --runs 40 \
-  './target/release/mft_dump.h4_before samples/MFT -o jsonl -f /dev/null --no-confirm-overwrite' \
-  './target/release/mft_dump.h4_after2 samples/MFT -o jsonl -f /dev/null --no-confirm-overwrite'
+  './target/release/ys-mft-parser.h4_before samples/MFT -o jsonl -f /dev/null --no-confirm-overwrite' \
+  './target/release/ys-mft-parser.h4_after2 samples/MFT -o jsonl -f /dev/null --no-confirm-overwrite'
 ```
 
 Extracted medians (from `target/h4-before-vs-after2.hyperfine.json`):
@@ -612,7 +612,7 @@ again but slows the whole workspace's release builds; not worth it.
   size from 1000 to 65536 changed nothing (the misses are compulsory, not capacity misses).
 - **Change**: cache a directory's own path as soon as it is resolved (exactly the value the miss
   path would compute). `test_get_full_path_independent_of_resolution_order` checks forward vs.
-  reverse resolution give identical paths. Input `BufReader` 4 KiB → 32 KiB, `mft_dump` output
+  reverse resolution give identical paths. Input `BufReader` 4 KiB → 32 KiB, `ys-mft-parser` output
   `BufWriter` 8 KiB → 64 KiB (64 KiB input made random parent lookups noticeably more expensive
   on inputs with poor locality, so 32 KiB is the compromise).
 
