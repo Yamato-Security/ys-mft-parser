@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Interleaved A/B wall-clock benchmark for `mft_dump` binaries.
+"""Interleaved A/B wall-clock benchmark for `ys-mft-parser` binaries.
 
 Runs every binary once per round, alternating the order each round, so slow drift on a noisy
 machine (shared CI/VM hosts, thermal throttling) affects all binaries equally. Reports the median

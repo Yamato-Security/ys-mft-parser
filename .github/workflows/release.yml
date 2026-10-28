@@ -101,11 +101,11 @@ jobs:
           version="${GITHUB_REF_NAME}"
           mkdir -p dist
           if [[ "${{ runner.os }}" == "Windows" ]]; then
-            src="${release_dir}/mft_dump.exe"
-            dest="dist/mft_dump-${version}-${{ matrix.target }}.exe"
+            src="${release_dir}/ys-mft-parser.exe"
+            dest="dist/ys-mft-parser-${version}-${{ matrix.target }}.exe"
           else
-            src="${release_dir}/mft_dump"
-            dest="dist/mft_dump-${version}-${{ matrix.target }}"
+            src="${release_dir}/ys-mft-parser"
+            dest="dist/ys-mft-parser-${version}-${{ matrix.target }}"
           fi
           cp "${src}" "${dest}"
           if [[ "${{ runner.os }}" != "Windows" ]]; then
@@ -115,7 +115,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v7
         with:
-          name: mft_dump-${{ matrix.target }}
+          name: ys-mft-parser-${{ matrix.target }}
           path: dist/*
           if-no-files-found: error
 

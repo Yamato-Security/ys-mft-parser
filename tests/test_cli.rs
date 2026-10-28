@@ -15,7 +15,7 @@ fn it_respects_directory_output() {
 
     let sample = mft_sample();
 
-    let mut cmd = cargo_bin_cmd!("mft_dump");
+    let mut cmd = cargo_bin_cmd!("ys-mft-parser");
     cmd.arg("-f").arg(f.as_os_str()).arg(sample.as_os_str());
 
     assert!(
@@ -37,7 +37,7 @@ fn test_it_refuses_to_overwrite_directory() {
     let d = tempdir().unwrap();
 
     let sample = mft_sample();
-    let mut cmd = cargo_bin_cmd!("mft_dump");
+    let mut cmd = cargo_bin_cmd!("ys-mft-parser");
     cmd.arg("-f").arg(d.path()).arg(sample.as_os_str());
 
     cmd.assert().failure().code(1);
@@ -52,7 +52,7 @@ fn test_non_mft_file_is_error() {
     let mut file = File::create(&f).unwrap();
     file.write_all(b"I'm a file!").unwrap();
 
-    let mut cmd = cargo_bin_cmd!("mft_dump");
+    let mut cmd = cargo_bin_cmd!("ys-mft-parser");
     cmd.arg(f.as_os_str());
 
     cmd.assert().failure().code(1);
@@ -63,7 +63,7 @@ fn test_it_exports_resident_streams() {
     let d = tempdir().unwrap();
 
     let sample = mft_sample();
-    let mut cmd = cargo_bin_cmd!("mft_dump");
+    let mut cmd = cargo_bin_cmd!("ys-mft-parser");
     cmd.arg("-e").arg(d.path()).arg(sample.as_os_str());
 
     cmd.assert().success();
@@ -77,7 +77,7 @@ fn test_it_exports_resident_streams() {
 
 #[test]
 fn test_bodyfile_output() {
-    let mut cmd = cargo_bin_cmd!("mft_dump");
+    let mut cmd = cargo_bin_cmd!("ys-mft-parser");
     cmd.arg("-o")
         .arg("bodyfile")
         .arg("-r")
@@ -106,7 +106,7 @@ fn test_bodyfile_output() {
 
 #[test]
 fn test_bodyfile_lines_have_eleven_fields() {
-    let mut cmd = cargo_bin_cmd!("mft_dump");
+    let mut cmd = cargo_bin_cmd!("ys-mft-parser");
     cmd.arg("-o").arg("bodyfile").arg(mft_sample());
     let output = cmd.output().unwrap();
     assert!(output.status.success());
@@ -125,7 +125,7 @@ fn test_bodyfile_lines_have_eleven_fields() {
 #[test]
 fn test_json_output_includes_full_path() {
     for format in ["json", "jsonl"] {
-        let mut cmd = cargo_bin_cmd!("mft_dump");
+        let mut cmd = cargo_bin_cmd!("ys-mft-parser");
         cmd.arg("-o")
             .arg(format)
             .arg("-r")
@@ -153,7 +153,7 @@ fn test_json_output_includes_full_path() {
 
 #[test]
 fn test_bodyfile_follows_extension_records() {
-    let mut cmd = cargo_bin_cmd!("mft_dump");
+    let mut cmd = cargo_bin_cmd!("ys-mft-parser");
     cmd.arg("-o")
         .arg("bodyfile")
         .arg("-r")
@@ -193,7 +193,7 @@ fn resident_streams_get_the_same_names_on_every_run() {
     let a = tempdir().unwrap();
     let b = tempdir().unwrap();
     for d in [&a, &b] {
-        let mut cmd = cargo_bin_cmd!("mft_dump");
+        let mut cmd = cargo_bin_cmd!("ys-mft-parser");
         cmd.arg("-o")
             .arg("csv")
             .arg("-e")
@@ -218,7 +218,7 @@ fn resident_streams_get_the_same_names_on_every_run() {
     );
 
     // a second extraction into the same directory does not overwrite evidence
-    let mut cmd = cargo_bin_cmd!("mft_dump");
+    let mut cmd = cargo_bin_cmd!("ys-mft-parser");
     cmd.arg("-o")
         .arg("csv")
         .arg("-e")
@@ -235,7 +235,7 @@ fn damaged_mfts_do_not_crash() {
     // the first header is all zeros (the entry size was divided by zero)
     let zero = d.as_ref().join("zero");
     fs::write(&zero, vec![0u8; 4096]).unwrap();
-    let mut cmd = cargo_bin_cmd!("mft_dump");
+    let mut cmd = cargo_bin_cmd!("ys-mft-parser");
     cmd.arg(zero.as_os_str());
     cmd.assert().failure().code(1);
 
@@ -244,7 +244,7 @@ fn damaged_mfts_do_not_crash() {
     wiped[..1024].fill(0);
     let path = d.as_ref().join("wiped");
     fs::write(&path, &wiped).unwrap();
-    let mut cmd = cargo_bin_cmd!("mft_dump");
+    let mut cmd = cargo_bin_cmd!("ys-mft-parser");
     cmd.arg("-o").arg("csv").arg(path.as_os_str());
     let out = cmd.assert().success().get_output().stdout.clone();
     assert!(String::from_utf8_lossy(&out).lines().count() > 13000);
@@ -256,7 +256,7 @@ fn damaged_mfts_do_not_crash() {
     fixup[e + 6..e + 8].copy_from_slice(&40u16.to_le_bytes());
     let path = d.as_ref().join("fixup");
     fs::write(&path, &fixup).unwrap();
-    let mut cmd = cargo_bin_cmd!("mft_dump");
+    let mut cmd = cargo_bin_cmd!("ys-mft-parser");
     cmd.arg("-o").arg("csv").arg(path.as_os_str());
     cmd.assert().success();
 }

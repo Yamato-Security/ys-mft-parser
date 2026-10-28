@@ -1,5 +1,5 @@
 #!/bin/bash
-# Deterministic instruction counts (valgrind/cachegrind, no cache simulation) for `mft_dump`
+# Deterministic instruction counts (valgrind/cachegrind, no cache simulation) for `ys-mft-parser`
 # binaries. Unlike wall time this is reproducible to <0.1% even on noisy machines, so it is the
 # best signal for small changes. It does not see syscalls or memory stalls; pair it with
 # scripts/perf/ab_bench.py.

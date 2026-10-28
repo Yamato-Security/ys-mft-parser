@@ -32,7 +32,7 @@ fn test_json_output_snapshots() {
     }
 }
 
-/// Formats an entry list as an `mft_dump --ranges` argument.
+/// Formats an entry list as a `ys-mft-parser --ranges` argument.
 fn ranges_arg(ids: impl IntoIterator<Item = u64>) -> String {
     ids.into_iter()
         .map(|id| id.to_string())
@@ -40,10 +40,10 @@ fn ranges_arg(ids: impl IntoIterator<Item = u64>) -> String {
         .join(",")
 }
 
-/// `mft_dump` uses a different JSON serializer for JSONL than the library's serde_json output, so
+/// `ys-mft-parser` uses a different JSON serializer for JSONL than the library's serde_json output, so
 /// snapshot the CLI output too. CSV covers the first 40 records plus the JSON entries.
 #[test]
-#[cfg(feature = "mft_dump")]
+#[cfg(feature = "ys-mft-parser")]
 fn test_cli_output_snapshots() {
     use assert_cmd::cargo::cargo_bin_cmd;
 
@@ -55,7 +55,7 @@ fn test_cli_output_snapshots() {
         ("jsonl", ranges_arg(json_ids())),
         ("csv", ranges_arg(csv_ids)),
     ] {
-        let mut cmd = cargo_bin_cmd!("mft_dump");
+        let mut cmd = cargo_bin_cmd!("ys-mft-parser");
         cmd.arg("-o")
             .arg(format)
             .arg("-r")
@@ -64,7 +64,7 @@ fn test_cli_output_snapshots() {
         let output = cmd.output().unwrap();
         assert!(
             output.status.success(),
-            "mft_dump failed: {}",
+            "ys-mft-parser failed: {}",
             String::from_utf8_lossy(&output.stderr)
         );
 

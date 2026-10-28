@@ -15,8 +15,8 @@ mod tests {
     use std::io::{Read, Write};
     use tempfile::tempdir;
 
-    fn mft_dump_path() -> &'static std::path::Path {
-        assert_cmd::cargo_bin!("mft_dump")
+    fn ys_mft_parser_path() -> &'static std::path::Path {
+        assert_cmd::cargo_bin!("ys-mft-parser")
     }
 
     // It should behave the same on windows, but interactive testing relies on unix pty internals.
@@ -33,7 +33,7 @@ mod tests {
 
         let cmd_string = format!(
             "{bin} -f {output_file} {sample}",
-            bin = mft_dump_path().display(),
+            bin = ys_mft_parser_path().display(),
             output_file = f.to_string_lossy(),
             sample = sample.to_str().unwrap()
         );
@@ -74,7 +74,7 @@ mod tests {
 
         let cmd_string = format!(
             "{bin} -f {output_file} {sample}",
-            bin = mft_dump_path().display(),
+            bin = ys_mft_parser_path().display(),
             output_file = f.to_string_lossy(),
             sample = sample.to_str().unwrap()
         );

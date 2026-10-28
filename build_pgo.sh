@@ -1,5 +1,5 @@
 #!/bin/bash
-# Builds a profile-guided-optimized `mft_dump`.
+# Builds a profile-guided-optimized `ys-mft-parser`.
 #
 # Requires `llvm-profdata` on PATH, matching rustc's LLVM version, e.g.:
 #   rustup component add llvm-tools
@@ -23,7 +23,7 @@ if [ "$TARGET" = "unknown" ]; then
 fi
 
 PGO_DATA_DIR=${PGO_DATA_DIR:-/tmp/mft-pgo-data}
-BIN="./target/$TARGET/release/mft_dump"
+BIN="./target/$TARGET/release/ys-mft-parser"
 
 echo "Using target: $TARGET"
 echo "Using llvm-profdata at: $(which llvm-profdata) ($(llvm-profdata --version | head -2 | tail -1))"
@@ -33,7 +33,7 @@ rm -rf "$PGO_DATA_DIR"
 
 echo "Building instrumented binary"
 RUSTFLAGS="-Cprofile-generate=$PGO_DATA_DIR" \
-    cargo build --release --bin mft_dump --target "$TARGET"
+    cargo build --release --bin ys-mft-parser --target "$TARGET"
 
 echo "Running instrumented binary"
 for format in jsonl json csv bodyfile; do
@@ -45,6 +45,6 @@ llvm-profdata merge -o "$PGO_DATA_DIR/merged.profdata" "$PGO_DATA_DIR"
 
 echo "Building binary with profile data"
 RUSTFLAGS="-Cprofile-use=$PGO_DATA_DIR/merged.profdata" \
-    cargo build --release --bin mft_dump --target "$TARGET"
+    cargo build --release --bin ys-mft-parser --target "$TARGET"
 
 echo "PGO-optimized binary written to: $BIN"

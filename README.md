@@ -14,7 +14,7 @@ damaged, crafted or partly reused `$MFT` files are parsed correctly instead of c
 | A deleted file in a deleted directory keeps its path (the parent's sequence number is one ahead) | fork |
 | The entry size is probed over the first 4 MiB and checked against the update sequence array, so MFTs whose first entries are wiped still open (upstream probes 64 KiB) | upstream #119 (Joel Uckelman) + fork |
 | Huge entry numbers, a data run before LCN 0 and `FlatMftEntryWithName` no longer wrap or panic | fork |
-| `mft_dump -e` names resident stream files deterministically and sanitizes the stream name (an alternate data stream named `../../x` was written outside the output directory) | fork |
+| `ys-mft-parser -e` names resident stream files deterministically and sanitizes the stream name (an alternate data stream named `../../x` was written outside the output directory) | fork |
 | A parent whose record was reused is still named when its old version left an extension record behind (Harel Segev's "orphaned attributes") | fork |
 
 Paths that can't be fully resolved start with a placeholder, as upstream's do:
@@ -65,17 +65,18 @@ Python bindings are available as well at https://github.com/omerbenamram/pymft-r
  - Supports extracting resident data streams.
 
 ## Installation (associated binary utility):
-  - Download latest executable release from https://github.com/omerbenamram/mft/releases
-    - Releases are automatically built for for Windows, macOS, and Linux. (64-bit executables only)
-  - Build from sources using  `cargo install mft`
+  - Build from sources using `cargo install --git https://github.com/Yamato-Security/ys-mft-parser mft`
+    (upstream's releases at https://github.com/omerbenamram/mft/releases are upstream's `mft_dump`,
+    without this fork's changes)
 
-# `mft_dump` (Binary utility):
-The main binary utility provided with this crate is `mft_dump`, and it provides a quick way to convert mft snapshots to different output formats.
+# `ys-mft-parser` (Binary utility):
+The main binary utility provided with this crate is `ys-mft-parser` (named after this repository;
+upstream's is `mft_dump`), and it provides a quick way to convert mft snapshots to different output formats.
 
 Some examples
-  - `mft_dump <input_file>` will dump contents of mft entries as JSON.
-  - `mft_dump -o csv <input_file>` will dump contents of mft entries as CSV.
-  - `mft_dump --extract-resident-streams <output_directory> -o json <input_file>` will extract all resident streams in MFT to files in <output_directory>.
+  - `ys-mft-parser <input_file>` will dump contents of mft entries as JSON.
+  - `ys-mft-parser -o csv <input_file>` will dump contents of mft entries as CSV.
+  - `ys-mft-parser --extract-resident-streams <output_directory> -o json <input_file>` will extract all resident streams in MFT to files in <output_directory>.
 
 # Library usage:
 ```rust,no_run
@@ -119,35 +120,35 @@ The repo ships with a small sample MFT (`samples/MFT`, ~13MB) which makes a good
 ### Baseline timings (hyperfine)
 
 ```bash
-cargo build --release --bin mft_dump
+cargo build --release --bin ys-mft-parser
 
 # End-to-end CLI throughput (write output to /dev/null to avoid terminal overhead).
 hyperfine --warmup 3 --runs 20 \
-  './target/release/mft_dump samples/MFT -o jsonl -f /dev/null --no-confirm-overwrite' \
-  './target/release/mft_dump samples/MFT -o csv -f /dev/null --no-confirm-overwrite'
+  './target/release/ys-mft-parser samples/MFT -o jsonl -f /dev/null --no-confirm-overwrite' \
+  './target/release/ys-mft-parser samples/MFT -o csv -f /dev/null --no-confirm-overwrite'
 ```
 
 ### CPU profiling (samply)
 
 ```bash
-cargo build --release --bin mft_dump
+cargo build --release --bin ys-mft-parser
 mkdir -p target/samply
 
 # End-to-end (parsing + serialization) profile.
 samply record --save-only --unstable-presymbolicate \
-  -o target/samply/mft_dump_jsonl.profile.json.gz \
+  -o target/samply/ys_mft_parser_jsonl.profile.json.gz \
   --iteration-count 200 -- \
-  ./target/release/mft_dump samples/MFT -o jsonl -f /dev/null --no-confirm-overwrite
+  ./target/release/ys-mft-parser samples/MFT -o jsonl -f /dev/null --no-confirm-overwrite
 
 # Parser-only profile (no serialization/output), long single-process run.
 # View in the Firefox Profiler UI.
-samply load target/samply/mft_dump_jsonl.profile.json.gz
+samply load target/samply/ys_mft_parser_jsonl.profile.json.gz
 ```
 
 In the Firefox Profiler UI:
 - Use the **Call Tree** tab with **Invert call stack** to identify top leaf frames.
 - Keep **Invert call stack** off to see inclusive hot functions (top-down).
-- Use **Filter stack** to focus on crate frames (for example, `mft::` or `mft_dump::`).
+- Use **Filter stack** to focus on crate frames (for example, `mft::` or `ys_mft_parser::`).
 
 ## Thanks/Resources:
  - https://docs.microsoft.com/en-us/windows/desktop/DevNotes/master-file-table

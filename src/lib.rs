@@ -26,7 +26,7 @@ pub mod utf16;
 pub(crate) mod macros;
 pub(crate) mod utils;
 
-// Public utilities (used by `mft_dump` and helpful for library consumers).
+// Public utilities (used by `ys-mft-parser` and helpful for library consumers).
 pub use utils::{
     serialize_option_timestamp, serialize_option_windows_path, serialize_timestamp,
     serialize_windows_path, windows_filetime_to_timestamp, windows_path,
