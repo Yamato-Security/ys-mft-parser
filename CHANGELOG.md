@@ -4,6 +4,38 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.0] - Unreleased (ys-mft-parser)
+
+Includes upstream 0.8.0 (ed20ab7, everything in its section below). Where upstream now fixes the
+same problem as this fork, upstream's code is used.
+
+### Changed
+- `MftParser::get_full_path_for_entry` returns `Option<PathBuf>` and `FlatMftEntryWithName::full_path`
+  is a `PathBuf` again; CSV and JSON write paths with `\` on every OS, as upstream and MFTECmd do.
+  This replaces the fork's port of upstream #120 (`/` everywhere), which upstream closed.
+- A cycle of parent references is cut at its lowest entry and becomes `[Orphaned]/...` (upstream's
+  resolver); it was `[Unknown]/...`. Chains of any depth resolve without recursion.
+- Paths are cached per entry and sequence number, so the stale-parent check (upstream #150) also
+  applies to names read from extension records.
+- `mft_dump -e` keeps the fork's file names, and takes upstream's export of streams stored in
+  extension records and its skipping of empty streams.
+- The version is 0.9.0, and the root crate doesn't depend on `rand`.
+
+### Fixed
+- A data run that lands before LCN 0 is rejected instead of wrapping to a huge cluster number.
+- The `mft_dump -e` help still described random bytes in the file names.
+
+### Kept from the fork
+- The 4 MiB entry-size probe with the update sequence check: upstream's 64 KiB probe can't open
+  dfir_ntfs's `ntfs_frag_mft.bin`, which this fork reads (3,007 entries).
+- The stale-parent check (upstream #150 with the deleted-parent correction), the error for
+  overflowing entry offsets, `FlatMftEntryWithName::from_entry` without `expect()`, and the
+  `mft_dump -e` path traversal fix.
+
+### CI
+- Upstream's lint job (clippy on every crate except the GUI) and MSRV job, with actions pinned by
+  commit. Tests run for the root crate; the other crates' tests need upstream's LFS disk images.
+
 ## [0.8.0] - 2026-10-27 (ys-mft-parser)
 
 First version of Yamato Security's fork, based on upstream `master` 18b6c05 (after 0.7.0).
