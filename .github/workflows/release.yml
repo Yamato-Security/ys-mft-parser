@@ -161,4 +161,4 @@ jobs:
       - name: Publish mft
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
-        run: cargo publish -p mft
+        run: cargo publish -p ys-mft-parser

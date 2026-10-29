@@ -24,7 +24,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 # Snapshot reader
 ntfs = { path = "../ntfs" }
-mft = { path = "../.." }
+mft = { package = "ys-mft-parser", path = "../.." }
 
 # Distributed slice for stylesheet registration
 linkme = "0.3"

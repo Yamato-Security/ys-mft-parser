@@ -7,9 +7,9 @@ license = "MIT/Apache-2.0"
 readme = "README.md"
 
 version = "0.1.0"
-authors = ["Omer Ben-Amram <omerbenamram@gmail.com>"]
+authors = ["Omer Ben-Amram", "Zach Mathis (@yamatosecurity)"]
 edition = "2024"
-rust-version = "1.90"
+rust-version = "1.99"
 
 [dependencies]
 thiserror = "2"

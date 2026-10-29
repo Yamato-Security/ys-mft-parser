@@ -2,7 +2,7 @@
 name = "aff"
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.90"
+rust-version = "1.99"
 license = "MIT/Apache-2.0"
 description = "AFF (Advanced Forensic Format) reader with optional crypto/signature verification"
 repository = "https://github.com/omerbenamram/mft"

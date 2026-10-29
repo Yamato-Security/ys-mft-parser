@@ -4,16 +4,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.9.0] - Unreleased (ys-mft-parser)
+## [1.0.0] - Unreleased (ys-mft-parser)
 
 Includes upstream 0.8.0 (ed20ab7, everything in its section below). Where upstream now fixes the
 same problem as this fork, upstream's code is used.
 
 ### Changed
+- The crate is named after its repository, `ys-mft-parser` (the library is still `mft`: depend on
+  it as `mft = { package = "ys-mft-parser", … }`), version 1.0.0, by Omer Ben-Amram and Zach
+  Mathis (@yamatosecurity), and requires Rust 1.99. (@YamatoSecurity)
 - The command is named after the repository: `ys-mft-parser`, not `mft_dump` (and so is the
   feature that builds it, `ys-mft-parser`, on by default). The entries below keep the old name.
 - `MftParser::get_full_path_for_entry` returns `Option<PathBuf>` and `FlatMftEntryWithName::full_path`
-  is a `PathBuf` again; CSV and JSON write paths with `\` on every OS, as upstream and MFTECmd do.
+  is a `PathBuf` again; CSV and JSON write paths with `\` on every OS, as upstream does.
   This replaces the fork's port of upstream #120 (`/` everywhere), which upstream closed.
 - A cycle of parent references is cut at its lowest entry and becomes `[Orphaned]/...` (upstream's
   resolver); it was `[Unknown]/...`. Chains of any depth resolve without recursion.
