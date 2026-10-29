@@ -33,7 +33,7 @@ Paths that can't be fully resolved start with a placeholder, as upstream's do:
 Use it from Cargo by commit:
 
 ```toml
-mft = { git = "https://github.com/Yamato-Security/ys-mft-parser", rev = "<commit>", default-features = false }
+mft = { package = "ys-mft-parser", git = "https://github.com/Yamato-Security/ys-mft-parser", rev = "<commit>", default-features = false }
 ```
 
 The crate keeps the name `mft` and is not published to crates.io; its versions start at 0.8.0 and
