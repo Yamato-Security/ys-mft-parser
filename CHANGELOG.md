@@ -16,7 +16,7 @@ same problem as this fork, upstream's code is used.
 - The command is named after the repository: `ys-mft-parser`, not `mft_dump` (and so is the
   feature that builds it, `ys-mft-parser`, on by default). The entries below keep the old name.
 - `MftParser::get_full_path_for_entry` returns `Option<PathBuf>` and `FlatMftEntryWithName::full_path`
-  is a `PathBuf` again; CSV and JSON write paths with `\` on every OS, as upstream and MFTECmd do.
+  is a `PathBuf` again; CSV and JSON write paths with `\` on every OS, as upstream does.
   This replaces the fork's port of upstream #120 (`/` everywhere), which upstream closed.
 - A cycle of parent references is cut at its lowest entry and becomes `[Orphaned]/...` (upstream's
   resolver); it was `[Unknown]/...`. Chains of any depth resolve without recursion.

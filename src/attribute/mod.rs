@@ -239,7 +239,6 @@ pub enum MftAttributeType {
 
 bitflags! {
     /// Flag sources:
-    /// <https://github.com/EricZimmerman/MFT/blob/3bed2626ee85e9a96a6db70a17407d0c3696056a/MFT/Attributes/StandardInfo.cs#L10>
     /// <https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/ca28ec38-f155-4768-81d6-4bfeb8586fc9>
     /// <https://learn.microsoft.com/en-us/windows/win32/fileio/file-attribute-constants>
     ///
