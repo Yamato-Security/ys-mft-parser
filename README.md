@@ -63,6 +63,7 @@ Python bindings are available as well at https://github.com/omerbenamram/pymft-r
  - Implemented using 100% safe rust - and works on all platforms supported by rust (that have stdlib).
  - Supports JSON and CSV outputs.
  - Supports extracting resident data streams.
+ - Directory indexes (`$I30`, `mft::i30`): the entries of INDX records, and the entries of deleted or renamed files left in their slack (whole, without their header, or without their parent).
 
 ## Installation (associated binary utility):
   - Build from sources using `cargo install --git https://github.com/Yamato-Security/ys-mft-parser mft`
