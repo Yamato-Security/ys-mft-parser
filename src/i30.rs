@@ -16,9 +16,10 @@
 //! them) is scanned at every 8-byte boundary, where entries start: for a whole entry, else for
 //! a `$FILE_NAME` alone (its entry header written over); at its start, also for a `$FILE_NAME`
 //! whose first 4 or 8 bytes (its parent) the end of the entries in use wrote over. What is taken
-//! for one must look like
-//! one Windows writes: a name of valid UTF-16 without control characters or path separators,
-//! times from 1980 to 2100, a known namespace and known file attribute flags.
+//! for one must look like one Windows writes: a name of valid UTF-16 without control characters
+//! or path separators, times from 1980 to 2100, a known namespace and known file attribute
+//! flags. A parent whose MFT entry number is past 32 bits (NTFS numbers fewer entries) is the
+//! bytes of something written over it, such as the end of an entry header, and is left out.
 
 use crate::attribute::FileAttributeFlags;
 use crate::attribute::x30::FileNamespace;
@@ -97,8 +98,9 @@ pub struct IndexEntry {
     pub name: String,
     /// The name's namespace.
     pub namespace: FileNamespace,
-    /// The directory's MFT entry and sequence number; `None` for an entry found at the start of
-    /// the slack whose first bytes were written over.
+    /// The directory's MFT entry and sequence number; `None` for an entry in the slack whose
+    /// first bytes were written over (at the start of the slack, or with an entry number past
+    /// 32 bits).
     pub parent: Option<MftReference>,
     /// When the file was made (FILETIME).
     pub created: u64,
@@ -177,7 +179,8 @@ fn file_name(key: &[u8]) -> Option<IndexEntry> {
         copy_of_entry_in_use: false,
         name,
         namespace,
-        parent: reference(key, 0),
+        // NTFS numbers at most 2^32 - 1 MFT entries: a larger one is bytes written over the parent
+        parent: reference(key, 0).filter(|p| p.entry <= u64::from(u32::MAX)),
         created: times[0],
         modified: times[1],
         mft_modified: times[2],

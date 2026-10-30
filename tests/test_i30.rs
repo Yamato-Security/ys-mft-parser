@@ -69,6 +69,15 @@ fn logs_in_use_and_in_slack() {
             .iter()
             .any(|e| e.name == "passwords.txt" && e.parent.is_none())
     );
+    // as entries were removed, the end of the entries in use (an entry header's last 8 bytes,
+    // whose entry number is past 32 bits) wrote over the parent of the password list's copies
+    let without_parent: Vec<&str> = slack
+        .iter()
+        .filter(|e| e.parent.is_none())
+        .map(|e| e.name.as_str())
+        .collect();
+    assert_eq!(without_parent, ["passwords.txt"; 11]);
+    assert!(slack.iter().filter_map(|e| e.parent).all(|p| p.entry == 64));
     let deleted = slack.iter().find(|e| e.name == "app-022.log").unwrap();
     assert_eq!(deleted.file_reference.map(|f| f.entry), Some(87));
     // "line 22\n"
