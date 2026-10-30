@@ -142,7 +142,7 @@ fn reference(b: &[u8], at: usize) -> Option<MftReference> {
 
 /// The `$FILE_NAME` at the start of `key`, when it looks like one Windows writes: the entry
 /// fields but its location and header are left empty.
-fn file_name(key: &[u8]) -> Option<IndexEntry> {
+fn file_name(key: &[u8], strict_slack: bool) -> Option<IndexEntry> {
     let name_length = usize::from(*key.get(0x40)?);
     let namespace = FileNamespace::from_u8(*key.get(0x41)?)?;
     let name_bytes = key.get(FILE_NAME_FIXED..FILE_NAME_FIXED + name_length * 2)?;
@@ -150,11 +150,11 @@ fn file_name(key: &[u8]) -> Option<IndexEntry> {
         return None;
     }
     let times = [8, 16, 24, 32].map(|at| u64_at(key, at).unwrap_or(0));
-    if times.iter().any(|t| !(EARLIEST..=LATEST).contains(t)) {
+    if strict_slack && times.iter().any(|t| !(EARLIEST..=LATEST).contains(t)) {
         return None;
     }
     let flags = u32_at(key, 0x38)?;
-    if flags & !KNOWN_FLAGS != 0 {
+    if strict_slack && flags & !KNOWN_FLAGS != 0 {
         return None;
     }
     let units: Vec<u16> = name_bytes
@@ -164,9 +164,10 @@ fn file_name(key: &[u8]) -> Option<IndexEntry> {
         .map(|u| u16::from_le_bytes(*u))
         .collect();
     let name = String::from_utf16(&units).ok()?;
-    if name
-        .chars()
-        .any(|c| c < ' ' || c == '/' || c == '\\' || c == '\u{fffd}')
+    if strict_slack
+        && name
+            .chars()
+            .any(|c| c < ' ' || c == '/' || c == '\\' || c == '\u{fffd}')
     {
         return None;
     }
@@ -187,34 +188,68 @@ fn file_name(key: &[u8]) -> Option<IndexEntry> {
         accessed: times[3],
         allocated_size: u64_at(key, 0x28)?,
         real_size: u64_at(key, 0x30)?,
-        file_flags: FileAttributeFlags::from_bits_truncate(flags),
+        file_flags: FileAttributeFlags::from_bits_retain(flags),
         reparse_value: u32_at(key, 0x3c)?,
     })
 }
 
 /// The entry whose header starts at `at` in `record`, when it is a whole entry with a
 /// `$FILE_NAME` key that looks like one Windows writes, and how many bytes it takes.
-fn entry_at(record: &[u8], at: usize, end: usize) -> Option<(IndexEntry, usize)> {
+#[derive(Clone, Copy)]
+struct EntryLayout {
+    length: usize,
+    key_length: usize,
+    flags: u32,
+}
+
+/// The structurally valid layout of the entry at `at`. A subnode VCN is stored after the key,
+/// so its eight bytes must not overlap the key.
+fn entry_layout(record: &[u8], at: usize, end: usize) -> Option<EntryLayout> {
     let length = usize::from(u16_at(record, at + 8)?);
     let key_length = usize::from(u16_at(record, at + 10)?);
     let flags = u32_at(record, at + 12)?;
-    if length < ENTRY_HEADER + FILE_NAME_FIXED + 2
+    let subnode = if flags & ENTRY_SUBNODE != 0 { 8 } else { 0 };
+    let keyed = flags & ENTRY_LAST == 0;
+    let minimum = if keyed {
+        ENTRY_HEADER + FILE_NAME_FIXED + 2 + subnode
+    } else {
+        ENTRY_HEADER + subnode
+    };
+    if length < minimum
         || !length.is_multiple_of(8)
-        || at + length > end
-        || key_length < FILE_NAME_FIXED + 2
-        || ENTRY_HEADER + key_length > length
+        || at.checked_add(length)? > end
         || flags & !(ENTRY_SUBNODE | ENTRY_LAST) != 0
+        || (keyed && key_length < FILE_NAME_FIXED + 2)
+        || (!keyed && key_length != 0)
+        || ENTRY_HEADER.checked_add(key_length)?.checked_add(subnode)? > length
     {
         return None;
     }
-    let key = record.get(at + ENTRY_HEADER..at + ENTRY_HEADER + key_length)?;
-    let mut entry = file_name(key)?;
-    entry.file_reference = Some(reference(record, at)?);
-    entry.flags = Some(flags);
-    if flags & ENTRY_SUBNODE != 0 {
-        entry.subnode_vcn = u64_at(record, at + length - 8);
+    Some(EntryLayout {
+        length,
+        key_length,
+        flags,
+    })
+}
+
+fn entry_at(
+    record: &[u8],
+    at: usize,
+    end: usize,
+    strict_slack: bool,
+) -> Option<(IndexEntry, usize)> {
+    let layout = entry_layout(record, at, end)?;
+    if layout.flags & ENTRY_LAST != 0 {
+        return None;
     }
-    Some((entry, length))
+    let key = record.get(at + ENTRY_HEADER..at + ENTRY_HEADER + layout.key_length)?;
+    let mut entry = file_name(key, strict_slack)?;
+    entry.file_reference = Some(reference(record, at)?);
+    entry.flags = Some(layout.flags);
+    if layout.flags & ENTRY_SUBNODE != 0 {
+        entry.subnode_vcn = u64_at(record, at + layout.length - 8);
+    }
+    Some((entry, layout.length))
 }
 
 /// The INDX records in `data` (an `$I30` stream, or other data holding INDX records), each with
@@ -249,11 +284,13 @@ pub fn index_records(data: &[u8]) -> Vec<IndexRecord> {
 pub fn index_record(data: &[u8], offset: u64) -> Option<IndexRecord> {
     let usa_offset = u16_at(data, 4)?;
     let usa_count = u16_at(data, 6)?;
+    let usa_end = usize::from(usa_offset).checked_add(usize::from(usa_count).checked_mul(2)?)?;
     let allocated = u32_at(data, NODE_HEADER + 8)? as usize;
     let size = NODE_HEADER + allocated;
     if !size.is_multiple_of(SECTOR)
         || size > MAX_RECORD
         || usize::from(usa_count) != size / SECTOR + 1
+        || usa_end > SECTOR - 2
         || size > data.len()
     {
         return None;
@@ -267,14 +304,21 @@ pub fn index_record(data: &[u8], offset: u64) -> Option<IndexRecord> {
     let applied =
         apply_update_sequence_array_fixups_in_place_with(&mut record, usa_offset, usa_count, |m| {
             if m.end_of_sector_bytes != m.replacement_bytes {
-                torn.push(m.sector_idx);
+                torn.push((m.sector_idx, m.end_of_sector_bytes));
             }
         });
+    // The shared helper applies replacement bytes after reporting a mismatch so callers can do
+    // best-effort structural parsing. For a genuinely torn sector, restore the bytes found in the
+    // evidence: stale USA bytes must not silently replace them.
+    for (sector, bytes) in &torn {
+        let end = (*sector + 1) * SECTOR;
+        record[end - 2..end].copy_from_slice(bytes);
+    }
     if let Err(e) = &applied {
         problems.push(format!("its update sequence array can't be applied: {e}"));
     }
     if !torn.is_empty() {
-        let sectors: Vec<String> = torn.iter().map(ToString::to_string).collect();
+        let sectors: Vec<String> = torn.iter().map(|(sector, _)| sector.to_string()).collect();
         problems.push(format!(
             "sectors {} don't end with the update sequence value: the record was written in part",
             sectors.join(", ")
@@ -315,11 +359,16 @@ fn entries_in_use(record: &[u8], first: usize, end: usize, index: &mut IndexReco
     let mut at = first;
     while at + ENTRY_HEADER <= end {
         let length = usize::from(u16_at(record, at + 8).unwrap_or(0));
-        let flags = u32_at(record, at + 12).unwrap_or(0);
-        if flags & ENTRY_LAST != 0 {
+        let Some(layout) = entry_layout(record, at, end) else {
+            index.problems.push(format!(
+                "the entry at 0x{at:x} (of {length} bytes) has an invalid layout: the entries after it are not read"
+            ));
+            return;
+        };
+        if layout.flags & ENTRY_LAST != 0 {
             return;
         }
-        match entry_at(record, at, end) {
+        match entry_at(record, at, end, false) {
             Some((mut entry, len)) => {
                 entry.offset = index.offset + at as u64;
                 index.entries.push(entry);
@@ -327,9 +376,10 @@ fn entries_in_use(record: &[u8], first: usize, end: usize, index: &mut IndexReco
             }
             None => {
                 index.problems.push(format!(
-                    "the entry at 0x{at:x} (of {length} bytes) can't be read: the entries after it are not read"
+                    "the entry at 0x{at:x} (of {} bytes) has a key that can't be read: it was skipped",
+                    layout.length
                 ));
-                return;
+                at += layout.length;
             }
         }
     }
@@ -350,7 +400,7 @@ fn slack_entries(record: &[u8], used: usize, start: usize, end: usize, index: &m
         };
         let mut key = vec![0u8; 8];
         key.extend(rest);
-        if let Some(mut entry) = file_name(&key) {
+        if let Some(mut entry) = file_name(&key, true) {
             let first = times - 8;
             entry.parent = None;
             entry.offset = index.offset + first as u64;
@@ -362,14 +412,14 @@ fn slack_entries(record: &[u8], used: usize, start: usize, end: usize, index: &m
         }
     }
     while at + FILE_NAME_FIXED + 2 <= end {
-        if let Some((mut entry, len)) = entry_at(record, at, end) {
+        if let Some((mut entry, len)) = entry_at(record, at, end, true) {
             entry.offset = index.offset + at as u64;
             entry.from_slack = true;
             index.slack.push(entry);
             at += len;
             continue;
         }
-        if let Some(mut entry) = record.get(at..end).and_then(file_name) {
+        if let Some(mut entry) = record.get(at..end).and_then(|key| file_name(key, true)) {
             entry.offset = index.offset + at as u64;
             entry.from_slack = true;
             let len = FILE_NAME_FIXED + entry.name.encode_utf16().count() * 2;
@@ -381,32 +431,49 @@ fn slack_entries(record: &[u8], used: usize, start: usize, end: usize, index: &m
     }
 }
 
-/// Marks the slack entries that copy an entry in use of the same index: the same name, file
-/// (when known), parent and times.
+/// Marks the slack entries that copy an entry in use of the same directory index: the same name,
+/// namespace, file (when known), parent and times. A parent missing because the entry header was
+/// overwritten is inferred only when the record identifies one unambiguous directory.
 fn mark_copies(records: &mut [IndexRecord]) {
-    type Key = (String, [u64; 4]);
-    let key = |e: &IndexEntry| -> Key {
+    type Identity = (String, u8, [u64; 4], MftReference);
+    type FullIdentity = (Identity, MftReference);
+    let identity = |e: &IndexEntry, parent: MftReference| -> Identity {
         (
             e.name.clone(),
+            e.namespace as u8,
             [e.created, e.modified, e.mft_modified, e.accessed],
+            parent,
         )
     };
-    let in_use: std::collections::HashMap<Key, Option<MftReference>> = records
+    let in_use_without_file: std::collections::HashSet<Identity> = records
         .iter()
         .flat_map(|r| &r.entries)
-        .map(|e| (key(e), e.file_reference))
+        .filter_map(|e| e.parent.map(|parent| identity(e, parent)))
         .collect();
-    let in_use_parents: std::collections::HashSet<MftReference> = records
+    let in_use: std::collections::HashSet<FullIdentity> = records
         .iter()
         .flat_map(|r| &r.entries)
-        .filter_map(|e| e.parent)
+        .filter_map(|e| Some((identity(e, e.parent?), e.file_reference?)))
         .collect();
-    for entry in records.iter_mut().flat_map(|r| &mut r.slack) {
-        if let Some(file) = in_use.get(&key(entry))
-            && entry.parent.is_none_or(|p| in_use_parents.contains(&p))
-        {
-            entry.copy_of_entry_in_use =
-                entry.file_reference.is_none() || entry.file_reference == *file;
+    for record in records {
+        let parents: std::collections::HashSet<MftReference> = record
+            .entries
+            .iter()
+            .chain(&record.slack)
+            .filter_map(|e| e.parent)
+            .collect();
+        let inferred_parent = (parents.len() == 1)
+            .then(|| parents.iter().next().copied())
+            .flatten();
+        for entry in &mut record.slack {
+            let Some(parent) = entry.parent.or(inferred_parent) else {
+                continue;
+            };
+            let key = identity(entry, parent);
+            entry.copy_of_entry_in_use = match entry.file_reference {
+                Some(file) => in_use.contains(&(key, file)),
+                None => in_use_without_file.contains(&key),
+            };
         }
     }
 }
@@ -417,8 +484,13 @@ mod tests {
 
     /// A `$FILE_NAME` for `name` under directory 5, its times `t`.
     fn key(name: &str, t: u64) -> Vec<u8> {
+        key_under(name, t, 5)
+    }
+
+    /// A `$FILE_NAME` for `name` under `parent`, its times `t`.
+    fn key_under(name: &str, t: u64, parent: u64) -> Vec<u8> {
         let mut k = vec![0u8; FILE_NAME_FIXED];
-        k[..8].copy_from_slice(&(5u64 | (5u64 << 48)).to_le_bytes());
+        k[..8].copy_from_slice(&(parent | (5u64 << 48)).to_le_bytes());
         for at in [8, 16, 24, 32] {
             k[at..at + 8].copy_from_slice(&t.to_le_bytes());
         }
@@ -566,12 +638,14 @@ mod tests {
         let r = &index_records(&saved)[0];
         assert!(r.valid_fixup && r.problems.is_empty(), "{:?}", r.problems);
         assert_eq!(r.entries.len(), 1);
-        // a key that is not a $FILE_NAME: the entries after it are not read
+        // a key that is not a $FILE_NAME: its structurally valid entry is skipped, without
+        // hiding valid entries that follow it
         let mut bad = key("x", WHEN);
         bad[0x41] = 9;
         let live = [entry(64, &bad, 0), entry(65, &key("after.txt", WHEN), 0)];
         let r = &index_records(&record(&live, &[], false))[0];
-        assert!(r.entries.is_empty());
+        assert_eq!(r.entries.len(), 1);
+        assert_eq!(r.entries[0].name, "after.txt");
         assert!(
             r.problems[0].starts_with("the entry at 0x58"),
             "{:?}",
@@ -583,9 +657,63 @@ mod tests {
         r[6] = 3;
         assert!(index_records(&r).is_empty());
         // times out of range, control characters: not taken for names
-        assert!(file_name(&key("ok", WHEN)).is_some());
-        assert!(file_name(&key("ok", 1)).is_none());
-        assert!(file_name(&key("a\u{1}b", WHEN)).is_none());
-        assert!(file_name(&key("a/b", WHEN)).is_none());
+        assert!(file_name(&key("ok", WHEN), true).is_some());
+        assert!(file_name(&key("ok", 1), true).is_none());
+        assert!(file_name(&key("a\u{1}b", WHEN), true).is_none());
+        assert!(file_name(&key("a/b", WHEN), true).is_none());
+    }
+
+    #[test]
+    fn active_entries_preserve_anomalies() {
+        // Range and known-flag checks prevent false positives while carving slack, but active
+        // entries have a trustworthy structure and must retain anomalous evidence.
+        let mut unusual = key("timestomped.txt", 1);
+        unusual[0x38..0x3c].copy_from_slice(&0x0080_0020u32.to_le_bytes());
+        let live = [
+            entry(64, &unusual, 0),
+            entry(65, &key("after.txt", WHEN), 0),
+        ];
+        let r = &index_records(&record(&live, &[], false))[0];
+        assert_eq!(r.entries.len(), 2);
+        assert_eq!(r.entries[0].created, 1);
+        assert_eq!(r.entries[0].file_flags.bits(), 0x0080_0020);
+        assert!(file_name(&unusual, true).is_none());
+    }
+
+    #[test]
+    fn torn_sector_keeps_the_bytes_found_in_evidence() {
+        // The first sector ends inside this long active name. Its USA holds "a", while the
+        // sector contains "b": a torn record must retain "b" rather than silently restoring the
+        // stale USA byte pair.
+        let long = "a".repeat(200);
+        let mut data = record(&[entry(64, &key(&long, WHEN), 0)], &[], false);
+        data[SECTOR - 2..SECTOR].copy_from_slice(&[b'b', 0]);
+        let r = &index_records(&data)[0];
+        assert!(!r.valid_fixup);
+        assert_eq!(r.entries.len(), 1);
+        assert_eq!(r.entries[0].name.chars().nth(170), Some('b'));
+    }
+
+    #[test]
+    fn copy_detection_does_not_cross_directories() {
+        // The same file metadata can be left in directory 5 after a move to directory 6. That
+        // old name is evidence, not an index-rebalancing copy of the live entry in directory 6.
+        let live = [entry(64, &key_under("moved.txt", WHEN, 6), 0)];
+        let slack = entry(64, &key_under("moved.txt", WHEN, 5), 0);
+        let r = &index_records(&record(&live, &slack, false))[0];
+        let moved = r.slack.iter().find(|e| e.name == "moved.txt").unwrap();
+        assert!(!moved.copy_of_entry_in_use);
+    }
+
+    #[test]
+    fn rejects_invalid_entry_and_fixup_layouts() {
+        // A subnode entry needs a separate eight-byte VCN after its key.
+        let e = entry(64, &key("no-vcn.txt", WHEN), ENTRY_SUBNODE);
+        assert!(entry_at(&e, 0, e.len(), false).is_none());
+
+        // The update sequence array must fit before the first sector's protected tail.
+        let mut data = record(&[], &[], false);
+        data[4..6].copy_from_slice(&500u16.to_le_bytes());
+        assert!(index_records(&data).is_empty());
     }
 }
