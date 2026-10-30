@@ -303,6 +303,27 @@ impl MftEntry {
         )
     }
 
+    /// The record's slack: its bytes past the size in use (`used_entry_size`, which ends with
+    /// the end-of-attributes marker) up to its allocated size, and where they start in the
+    /// record. Empty when the sizes don't fit the record.
+    pub fn slack(&self) -> (usize, &[u8]) {
+        let end = (self.header.total_entry_size as usize).min(self.data.len());
+        let start = self.header.used_entry_size as usize;
+        match self.data.get(start..end) {
+            Some(slack) => (start, slack),
+            None => (end, &[]),
+        }
+    }
+
+    /// The file names left in the record's [slack](MftEntry::slack): `$FILE_NAME` attributes
+    /// and index entries the record had before (an index root that shrank, a name or other
+    /// attribute removed or shortened, an earlier occupant of a reused record), found as in an
+    /// INDX record's slack ([`crate::i30::slack_entries_in`]). Their offsets are in the record.
+    pub fn slack_file_names(&self) -> Vec<crate::i30::IndexEntry> {
+        let (start, slack) = self.slack();
+        crate::i30::slack_entries_in(slack, start as u64)
+    }
+
     pub fn is_allocated(&self) -> bool {
         self.header.flags.bits() & 0x01 != 0
     }
