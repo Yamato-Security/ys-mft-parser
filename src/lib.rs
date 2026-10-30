@@ -19,6 +19,7 @@ pub mod bodyfile;
 pub mod csv;
 pub mod entry;
 pub mod err;
+pub mod i30;
 pub mod mft;
 pub mod ntfs;
 pub mod utf16;

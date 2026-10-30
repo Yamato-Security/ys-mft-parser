@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Includes upstream 0.8.0 (ed20ab7, everything in its section below). Where upstream now fixes the
 same problem as this fork, upstream's code is used.
 
+### Added
+- `i30`: directory indexes (`$I30`): `index_records` reads the INDX records of an `$INDEX_ALLOCATION:$I30` stream (or any data holding them: they are looked for at every 512-byte boundary), with their update sequence arrays applied (a record written in part is read as it is and said so; one saved with the array already applied is taken as it is), their entries in use (each file's `$FILE_NAME`: name, namespace, parent, times, sizes, flags) and the entries left in their slack by files deleted or renamed: whole entries, `$FILE_NAME`s whose entry header was written over, and one whose parent the end of the entries in use wrote over. What is taken from slack must look like what Windows writes; copies of entries in use are marked. (@YamatoSecurity)
+
 ### Changed
 - The crate is named after its repository, `ys-mft-parser` (the library is still `mft`: depend on
   it as `mft = { package = "ys-mft-parser", … }`), version 1.0.0, by Omer Ben-Amram and Zach
