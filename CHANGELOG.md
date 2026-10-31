@@ -11,6 +11,7 @@ same problem as this fork, upstream's code is used.
 
 ### Added
 - `i30`: directory indexes (`$I30`): `index_records` reads the INDX records of an `$INDEX_ALLOCATION:$I30` stream (or any data holding them: they are looked for at every 512-byte boundary), with their update sequence arrays applied (a record written in part is read as it is and said so; one saved with the array already applied is taken as it is), their entries in use (each file's `$FILE_NAME`: name, namespace, parent, times, sizes, flags) and the entries left in their slack by files deleted or renamed: whole entries, `$FILE_NAME`s whose entry header was written over, and those whose parent was written over (left out). What is taken from slack must look like what Windows writes; copies of entries in use are marked. (@YamatoSecurity)
+- `MftEntry::slack` (a FILE record's bytes past its size in use) and `MftEntry::slack_file_names`: the `$FILE_NAME` attributes and index entries left there (an index root that shrank, a name or other attribute removed or shortened, an earlier occupant of a reused record), found as in an INDX record's slack by `i30::slack_entries_in`, which reads any such bytes. `entry::slack_bounds` checks the record first: a size in use that ends inside the header or the attributes in use, or past the allocated size, or an allocated size past the record, is an error that says why, never slack. (@YamatoSecurity)
 
 ### Changed
 - The crate is named after its repository, `ys-mft-parser` (the library is still `mft`: depend on

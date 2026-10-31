@@ -411,24 +411,43 @@ fn slack_entries(record: &[u8], used: usize, start: usize, end: usize, index: &m
             break;
         }
     }
+    scan_slack(record, at, end, index.offset, &mut index.slack);
+}
+
+/// The entries in `[at, end)` of `data`, at every 8-byte boundary from `at`: whole entries, else
+/// `$FILE_NAME`s whose entry header was written over. `base` is where `data` starts in the data
+/// read.
+fn scan_slack(data: &[u8], mut at: usize, end: usize, base: u64, found: &mut Vec<IndexEntry>) {
     while at + FILE_NAME_FIXED + 2 <= end {
-        if let Some((mut entry, len)) = entry_at(record, at, end, true) {
-            entry.offset = index.offset + at as u64;
+        if let Some((mut entry, len)) = entry_at(data, at, end, true) {
+            entry.offset = base + at as u64;
             entry.from_slack = true;
-            index.slack.push(entry);
+            found.push(entry);
             at += len;
             continue;
         }
-        if let Some(mut entry) = record.get(at..end).and_then(|key| file_name(key, true)) {
-            entry.offset = index.offset + at as u64;
+        if let Some(mut entry) = data.get(at..end).and_then(|key| file_name(key, true)) {
+            entry.offset = base + at as u64;
             entry.from_slack = true;
             let len = FILE_NAME_FIXED + entry.name.encode_utf16().count() * 2;
-            index.slack.push(entry);
+            found.push(entry);
             at += len.next_multiple_of(8);
             continue;
         }
         at += 8;
     }
+}
+
+/// The index entries and `$FILE_NAME`s in `slack`, bytes no longer in use, such as the end of a
+/// FILE record past its attributes (see [`crate::MftEntry::slack_file_names`]). They are looked
+/// for as in an INDX record's slack, at every 8-byte boundary: whole entries, else `$FILE_NAME`s
+/// whose entry header was written over, when they look like what Windows writes. `offset` is
+/// where `slack` starts in the data read; every entry returned is `from_slack`.
+#[must_use]
+pub fn slack_entries_in(slack: &[u8], offset: u64) -> Vec<IndexEntry> {
+    let mut found = Vec::new();
+    scan_slack(slack, 0, slack.len(), offset, &mut found);
+    found
 }
 
 /// Marks the slack entries that copy an entry in use of the same directory index: the same name,
