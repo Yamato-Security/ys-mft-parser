@@ -221,6 +221,74 @@ impl EntryHeader {
     }
 }
 
+/// The end-of-attributes marker of a FILE record.
+const END_OF_ATTRIBUTES: u32 = 0xFFFF_FFFF;
+/// The smallest FILE record header (NTFS 3.0's, before its update sequence array).
+const SMALLEST_HEADER: usize = 0x2A;
+
+fn u16_at(bytes: &[u8], at: usize) -> Option<usize> {
+    Some(usize::from(u16::from_le_bytes(
+        bytes.get(at..at + 2)?.try_into().ok()?,
+    )))
+}
+
+fn u32_at(bytes: &[u8], at: usize) -> Option<usize> {
+    usize::try_from(u32::from_le_bytes(bytes.get(at..at + 4)?.try_into().ok()?)).ok()
+}
+
+/// Where the slack of FILE `record` (its bytes, the update sequence array applied) starts and
+/// ends: from its size in use (`0x18`) to its allocated size (`0x1C`). The size in use must not
+/// end inside the header or the attributes in use (the attributes from the first one, `0x14`, to
+/// the end marker), and the allocated size must fit the record: otherwise the bytes in use can't
+/// be told from the slack, and the error says why.
+pub fn slack_bounds(record: &[u8]) -> std::result::Result<(usize, usize), String> {
+    let field = |at| u32_at(record, at).ok_or_else(|| "its header is cut short".to_string());
+    let used = field(0x18)?;
+    let allocated = field(0x1C)?;
+    let first = u16_at(record, 0x14).ok_or_else(|| "its header is cut short".to_string())?;
+    if allocated > record.len() {
+        return Err(format!(
+            "its allocated size (0x{allocated:X}) is past the record's 0x{:X} bytes",
+            record.len()
+        ));
+    }
+    if used > allocated {
+        return Err(format!(
+            "its size in use (0x{used:X}) is past its allocated size (0x{allocated:X})"
+        ));
+    }
+    if first < SMALLEST_HEADER {
+        return Err(format!(
+            "its first attribute (at 0x{first:X}) is inside its header"
+        ));
+    }
+    // The attributes in use, to their end marker.
+    let mut at = first;
+    let end = loop {
+        let Some(kind) = u32_at(record, at) else {
+            return Err(format!(
+                "its attributes run past its end without an end marker (from 0x{at:X})"
+            ));
+        };
+        if kind == END_OF_ATTRIBUTES as usize {
+            break at + 4;
+        }
+        let length = u32_at(record, at + 4).unwrap_or(0);
+        if length < 0x18 || !length.is_multiple_of(8) || at + length > allocated {
+            return Err(format!(
+                "its attribute at 0x{at:X} has an invalid length (0x{length:X})"
+            ));
+        }
+        at += length;
+    };
+    if used < end {
+        return Err(format!(
+            "its size in use (0x{used:X}) ends before its attributes do (0x{end:X})"
+        ));
+    }
+    Ok((used, allocated))
+}
+
 impl MftEntry {
     /// Initializes an MFT Entry from a buffer.
     /// Since the parser is the entity responsible for knowing the entry size,
@@ -303,25 +371,21 @@ impl MftEntry {
         )
     }
 
-    /// The record's slack: its bytes past the size in use (`used_entry_size`, which ends with
-    /// the end-of-attributes marker) up to its allocated size, and where they start in the
-    /// record. Empty when the sizes don't fit the record.
-    pub fn slack(&self) -> (usize, &[u8]) {
-        let end = (self.header.total_entry_size as usize).min(self.data.len());
-        let start = self.header.used_entry_size as usize;
-        match self.data.get(start..end) {
-            Some(slack) => (start, slack),
-            None => (end, &[]),
-        }
+    /// The record's slack: its bytes past the size in use up to its allocated size, and where
+    /// they start in the record (see [`slack_bounds`]); why they can't be told apart from the
+    /// bytes in use when the record's sizes and attributes don't agree.
+    pub fn slack(&self) -> std::result::Result<(usize, &[u8]), String> {
+        let (start, end) = slack_bounds(&self.data)?;
+        Ok((start, &self.data[start..end]))
     }
 
     /// The file names left in the record's [slack](MftEntry::slack): `$FILE_NAME` attributes
     /// and index entries the record had before (an index root that shrank, a name or other
     /// attribute removed or shortened, an earlier occupant of a reused record), found as in an
     /// INDX record's slack ([`crate::i30::slack_entries_in`]). Their offsets are in the record.
-    pub fn slack_file_names(&self) -> Vec<crate::i30::IndexEntry> {
-        let (start, slack) = self.slack();
-        crate::i30::slack_entries_in(slack, start as u64)
+    pub fn slack_file_names(&self) -> std::result::Result<Vec<crate::i30::IndexEntry>, String> {
+        let (start, slack) = self.slack()?;
+        Ok(crate::i30::slack_entries_in(slack, start as u64))
     }
 
     pub fn is_allocated(&self) -> bool {

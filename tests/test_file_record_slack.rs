@@ -107,11 +107,11 @@ fn names_left_in_the_slack_of_a_file_record() {
     let mut parser = mft_with(record(&[current], slack_at, &slack));
     let entry = parser.get_entry(40).unwrap();
     assert_eq!(entry.valid_fixup, Some(true));
-    let (start, bytes) = entry.slack();
+    let (start, bytes) = entry.slack().unwrap();
     assert_eq!(start, used);
     assert_eq!(bytes.len(), RECORD_SIZE - start);
 
-    let names = entry.slack_file_names();
+    let names = entry.slack_file_names().unwrap();
     assert_eq!(names.len(), 2, "{names:#?}");
     let earlier_name = &names[0];
     assert_eq!(earlier_name.name, "invoice.pdf.exe");
@@ -133,18 +133,85 @@ fn names_left_in_the_slack_of_a_file_record() {
 fn no_names_in_empty_or_unreadable_slack() {
     let current = resident(0x30, &file_name("report.txt", (5, 5)));
     let mut parser = mft_with(record(std::slice::from_ref(&current), 0x200, &[]));
-    assert_eq!(parser.get_entry(40).unwrap().slack_file_names(), []);
+    assert_eq!(parser.get_entry(40).unwrap().slack_file_names(), Ok(vec![]));
 
     // Not names: random-looking bytes.
     let noise: Vec<u8> = (0..400u32).map(|i| (i * 37 % 251) as u8).collect();
     let mut parser = mft_with(record(std::slice::from_ref(&current), 0x100, &noise));
-    assert_eq!(parser.get_entry(40).unwrap().slack_file_names(), []);
+    assert_eq!(parser.get_entry(40).unwrap().slack_file_names(), Ok(vec![]));
+}
 
-    // A used size past the record: no slack.
-    let mut damaged = record(&[current], 0x200, &[]);
-    damaged[0x18..0x1C].copy_from_slice(&5000u32.to_le_bytes());
-    let mut parser = mft_with(damaged);
-    let entry = parser.get_entry(40).unwrap();
-    assert_eq!(entry.slack().1, []);
-    assert_eq!(entry.slack_file_names(), []);
+/// `record` with the u32 (or u16) at `at` set to `value`.
+fn with_field(mut record: Vec<u8>, at: usize, value: u32, width: usize) -> Vec<u8> {
+    record[at..at + width].copy_from_slice(&value.to_le_bytes()[..width]);
+    record
+}
+
+#[test]
+fn sizes_and_attributes_that_disagree_are_not_slack() {
+    let current = resident(0x30, &file_name("report.txt", (5, 5)));
+    let earlier = resident(0x30, &file_name("invoice.pdf.exe", (90, 2)));
+    let good = record(std::slice::from_ref(&current), 0x1C8, &earlier);
+    let end = 0x38 + current.len() + 4; // past the end marker
+    for (what, damaged, error) in [
+        (
+            "a size in use of 0",
+            with_field(good.clone(), 0x18, 0, 4),
+            "its size in use (0x0) ends before its attributes do",
+        ),
+        (
+            "a size in use inside the attributes in use",
+            with_field(good.clone(), 0x18, 0x60, 4),
+            "its size in use (0x60) ends before its attributes do",
+        ),
+        (
+            "a size in use past the allocated size",
+            with_field(good.clone(), 0x18, 5000, 4),
+            "its size in use (0x1388) is past its allocated size (0x400)",
+        ),
+        (
+            "an allocated size past the record",
+            with_field(good.clone(), 0x1C, 0x800, 4),
+            "its allocated size (0x800) is past the record's 0x400 bytes",
+        ),
+        (
+            "a first attribute inside the header",
+            with_field(good.clone(), 0x14, 0x10, 2),
+            "its first attribute (at 0x10) is inside its header",
+        ),
+        (
+            "an attribute of length 0",
+            with_field(good.clone(), 0x38 + 4, 0, 4),
+            "its attribute at 0x38 has an invalid length (0x0)",
+        ),
+    ] {
+        // The record alone: a parser would take the record size from the damaged one.
+        let entry = mft::MftEntry::from_buffer(damaged, 40).unwrap();
+        let found = entry.slack_file_names();
+        assert!(
+            found.as_ref().is_err_and(|e| e.starts_with(error)),
+            "{what}: {found:?}"
+        );
+        assert!(entry.slack().is_err(), "{what}");
+    }
+    // The end marker followed by a size in use 4 bytes on, as Windows writes it, is fine.
+    let entry =
+        mft::MftEntry::from_buffer(with_field(good, 0x18, (end + 4) as u32, 4), 40).unwrap();
+    let names = entry.slack_file_names().unwrap();
+    assert_eq!(names.len(), 1);
+}
+
+#[test]
+fn a_live_name_is_not_slack_when_the_size_in_use_is_zero() {
+    // An in-use file of the public sample MFT, its size in use zeroed: its own system.ini name
+    // must not be taken for a name left in slack.
+    let mut data = std::fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/samples/MFT")).unwrap();
+    let mut parser = MftParser::from_buffer(data.clone()).unwrap();
+    let entry = parser.get_entry(209).unwrap();
+    assert!(entry.is_allocated());
+    assert_eq!(entry.slack_file_names().map(|n| n.len()), Ok(0));
+    data[209 * RECORD_SIZE + 0x18..209 * RECORD_SIZE + 0x1C].copy_from_slice(&0u32.to_le_bytes());
+    let mut parser = MftParser::from_buffer(data).unwrap();
+    let entry = parser.get_entry(209).unwrap();
+    assert!(entry.slack_file_names().is_err());
 }
