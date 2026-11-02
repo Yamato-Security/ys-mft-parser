@@ -3,7 +3,7 @@ name = "ys-mft-parser"
 description = "A Fast (and safe) parser for the Windows Master File Table (MFT) format"
 homepage = "https://github.com/Yamato-Security/ys-mft-parser"
 repository = "https://github.com/Yamato-Security/ys-mft-parser"
-license = "MIT/Apache-2.0"
+license = "RPL-1.5 AND (MIT OR Apache-2.0)"
 readme = "README.md"
 
 version = "1.0.0"

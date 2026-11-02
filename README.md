@@ -2,8 +2,9 @@
 
 Yamato Security's maintained fork of Omer Ben-Amram's [mft](https://github.com/omerbenamram/mft)
 crate, the Windows Master File Table parser used by
-[Juntei](https://github.com/Yamato-Security/juntei). The complete upstream history and the
-MIT / Apache-2.0 license are retained; everything below this section is upstream's README.
+[Juntei](https://github.com/Yamato-Security/juntei). The complete upstream history is retained, and
+upstream's code stays under its MIT / Apache-2.0 license (see [License](#license)); everything below
+this section is upstream's README.
 
 The fork follows upstream (currently 0.8.0) and adds fixes found while building Juntei, so that
 damaged, crafted or partly reused `$MFT` files are parsed correctly instead of crashing the process:
@@ -43,6 +44,14 @@ The disk images that the `ntfs`, `ewf` and `aff` crates test with are upstream's
 which this fork doesn't store. `python3 scripts/fetch_lfs_testdata.py` downloads them from upstream
 into `testdata/` (checking each one's SHA-256); `git checkout -- testdata` puts the pointer files
 back.
+
+## License
+
+ys-mft-parser is copyright Shirofune Security Co., Ltd. and released under the [Reciprocal Public
+License 1.5](LICENSE) (RPL-1.5); its source code was published under MIT / Apache-2.0 before version
+1.0.0. It is changed from [mft](https://github.com/omerbenamram/mft) (copyright Omer
+Ben-Amram), whose code stays under the MIT License or the Apache License 2.0 (`LICENSE-MIT`,
+`LICENSE-APACHE`): each Rust file changed from it says so in its header.
 
 ---
 

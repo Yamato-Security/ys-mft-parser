@@ -2,6 +2,7 @@
 name = "ntfs-explorer-gui"
 version = "0.1.0"
 edition = "2024"
+license = "RPL-1.5 AND (MIT OR Apache-2.0)"
 
 [features]
 default = ["desktop"]
