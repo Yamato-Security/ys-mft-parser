@@ -3,7 +3,7 @@ name = "ewf"
 description = "Expert Witness Compression Format (EWF) reader/writer"
 homepage = "https://github.com/omerbenamram/mft"
 repository = "https://github.com/omerbenamram/mft"
-license = "MIT/Apache-2.0"
+license = "RPL-1.5 AND (MIT OR Apache-2.0)"
 readme = "README.md"
 
 version = "0.1.0"
